@@ -101,9 +101,46 @@ export const semearExemplo = async () => {
     store.limparCache();
 };
 
+/* Todo registro de exemplo carrega este prefixo no id. É o que permite
+   removê-los sem tocar no que é real — e é também por isso que os ids são
+   fixos em vez de uuid: semear duas vezes reescreve as mesmas linhas em vez
+   de duplicar a base. */
+const PREFIXO = 'ex-';
+
+/* Ordem de exclusão: os dependentes primeiro. Repasse aponta para entrada, e
+   entrada aponta para cliente; começar pelos cadastros faria o banco anular
+   esses vínculos linha por linha à toa, logo antes de apagar as linhas. */
+const ORDEM = ['repasses', 'entradas', 'investimentos', 'clientes', 'integrantes'];
+
+/**
+ * Remove SÓ os registros de exemplo, deixando os lançamentos reais.
+ *
+ * Existe porque "apagar tudo" é uma porta larga demais para quem só quer
+ * limpar a demonstração depois de já ter começado a lançar de verdade.
+ */
+export const limparExemplo = async () => {
+    for (const nome of ORDEM) {
+        const linhas = await store[nome].listar();
+        for (const l of linhas) {
+            if (String(l.id).startsWith(PREFIXO)) await store[nome].excluir(l.id);
+        }
+    }
+    store.limparCache();
+};
+
+/** Quantos registros de exemplo estão no banco agora. */
+export const contarExemplo = async () => {
+    let total = 0;
+    for (const nome of ORDEM) {
+        const linhas = await store[nome].listar();
+        total += linhas.filter(l => String(l.id).startsWith(PREFIXO)).length;
+    }
+    return total;
+};
+
 /** Apaga tudo, em todas as coleções. Sem volta — ver Configurações. */
 export const limparTudo = async () => {
-    for (const nome of ['entradas', 'repasses', 'investimentos', 'clientes', 'integrantes']) {
+    for (const nome of ORDEM) {
         const linhas = await store[nome].listar();
         for (const l of linhas) await store[nome].excluir(l.id);
     }

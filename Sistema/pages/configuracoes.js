@@ -3,7 +3,7 @@ import { renderShell } from '../components/pageshell.js';
 import { toast } from '../components/toast.js';
 import { theme } from '../theme.js';
 import { moeda, hoje, esc } from '../lib/formato.js';
-import { semearExemplo, limparTudo } from '../seed/exemplo.js';
+import { semearExemplo, limparExemplo, limparTudo, contarExemplo } from '../seed/exemplo.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIGURAÇÕES — conexão, cópia de segurança e aparência.
@@ -26,6 +26,7 @@ export const renderConfiguracoes = async (container) => {
     const totalEntradas = dados.entradas
         .filter(e => e.status === 'recebido')
         .reduce((t, e) => t + (e.valor_centavos || 0), 0);
+    const exemplos = await contarExemplo();
 
     const { content } = renderShell(container, {
         path: '/configuracoes',
@@ -139,21 +140,34 @@ export const renderConfiguracoes = async (container) => {
             <div class="gs-secao__cabeca">
                 <div>
                     <h2 class="ds-card-title">Zona de testes</h2>
-                    <span class="ds-card-sub">Para conhecer a ferramenta antes de usar de verdade</span>
+                    <span class="ds-card-sub">
+                        ${exemplos
+                            ? `${exemplos} registros de exemplo no sistema agora`
+                            : 'Para conhecer a ferramenta antes de usar de verdade'}
+                    </span>
                 </div>
+                ${exemplos ? '<span class="ds-chip ds-chip--accent">exemplos ativos</span>' : ''}
             </div>
             <div class="cf-acoes">
                 <button class="ds-btn ds-btn--ghost" id="cf-exemplo">
-                    <i data-lucide="sparkles"></i> Preencher com dados de exemplo
+                    <i data-lucide="sparkles"></i>
+                    ${exemplos ? 'Restaurar dados de exemplo' : 'Preencher com dados de exemplo'}
                 </button>
+                ${exemplos ? `
+                    <button class="ds-btn ds-btn--ghost" id="cf-limpar-exemplo">
+                        <i data-lucide="eraser"></i> Remover só os exemplos
+                    </button>` : ''}
                 <button class="ds-btn ds-btn--ghost cf-perigo" id="cf-limpar">
                     <i data-lucide="trash-2"></i> Apagar todos os dados
                 </button>
             </div>
-            <p class="ds-hint ds-hint--aviso">
-                <i data-lucide="triangle-alert"></i>
-                Os dados de exemplo são fictícios e entram <em>somando</em> ao que já existe.
-                Apagar tudo não tem volta — só o arquivo exportado traz de volta.
+            <p class="ds-hint">
+                <i data-lucide="info"></i>
+                Os exemplos podem ir e voltar quantas vezes você quiser: eles têm identificadores
+                fixos, então recriá-los repõe exatamente os mesmos registros, com as datas
+                recalculadas a partir do mês atual. <strong>Remover só os exemplos</strong> não
+                toca no que você lançou de verdade — <strong>apagar todos os dados</strong> toca,
+                e não tem volta.
             </p>
         </article>
     `;
@@ -205,9 +219,22 @@ export const renderConfiguracoes = async (container) => {
 
     // ── Exemplo / limpeza ───────────────────────────────────────────────
     document.getElementById('cf-exemplo').addEventListener('click', async (e) => {
-        e.target.disabled = true;
+        // closest: o clique costuma cair no <i> do ícone, e desabilitar o
+        // ícone não impede o segundo clique de disparar tudo de novo.
+        const b = e.target.closest('button');
+        b.disabled = true;
+        b.textContent = 'Criando…';
         await semearExemplo();
-        toast('Dados de exemplo criados.');
+        toast(exemplos ? 'Dados de exemplo restaurados.' : 'Dados de exemplo criados.');
+        renderConfiguracoes(container);
+    });
+
+    document.getElementById('cf-limpar-exemplo')?.addEventListener('click', async (e) => {
+        const b = e.target.closest('button');
+        b.disabled = true;
+        b.textContent = 'Removendo…';
+        await limparExemplo();
+        toast('Exemplos removidos. Seus lançamentos continuam aí.');
         renderConfiguracoes(container);
     });
 
