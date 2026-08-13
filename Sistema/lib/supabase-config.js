@@ -20,8 +20,13 @@
    leitura pública: não há tela que gente de fora veja.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-export const SUPABASE_URL  = '';
-export const SUPABASE_ANON = '';
+/* Só o endereço do projeto, sem caminho. O painel do Supabase mostra a URL
+   da API REST (…/rest/v1/) em alguns lugares, mas a biblioteca monta esse
+   trecho sozinha — e monta também o de autenticação (/auth/v1). Com o
+   caminho já colado aqui, o login tentaria bater em /rest/v1/auth/v1/token
+   e falharia sem dizer por quê. */
+export const SUPABASE_URL  = 'https://vwgxrufjlalqshixalmo.supabase.co';
+export const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3Z3hydWZqbGFscXNoaXhhbG1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTE5NjIsImV4cCI6MjEwMjIyNzk2Mn0.6QfO8DLYsF6hiKpqSfeZclz2oi4WoT8cTWPKHWkhXAM';
 
 /** Há banco configurado? Se não, o store cai no adaptador local. */
 export const CONFIGURADO = !!(SUPABASE_URL && SUPABASE_ANON);
