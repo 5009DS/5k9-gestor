@@ -1,0 +1,160 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   5K9 GESTOR — vocabulário compartilhado das páginas.
+
+   Prefixo .gs-. Aqui mora o que aparece em MAIS DE UMA tela: a barra de
+   filtros, o seletor de mês, a linha de lançamento, o cartão de indicador.
+   O que é de uma página só continua no <style> dela.
+
+   A regra do design system vale sem exceção: nenhuma cor literal, tudo por
+   var(--token). É o que faz o tema claro funcionar sem ninguém revisar.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Cartões de indicador ────────────────────────────────────────────────
+   Grade que se acomoda sozinha: com três indicadores eles ocupam a largura;
+   com cinco, quebram em duas linhas sem virar tiras finas. */
+.gs-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: var(--bento-gap);
+}
+.gs-kpi {
+    display: flex; flex-direction: column; gap: var(--space-2);
+    padding: var(--space-5);
+    text-decoration: none;
+}
+.gs-kpi__topo { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.gs-kpi__rotulo { font-size: var(--text-xs); color: var(--text-tertiary); }
+.gs-kpi__icone {
+    width: 30px; height: 30px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-sm);
+    background: var(--surface-3); color: var(--text-secondary);
+}
+.gs-kpi__icone i, .gs-kpi__icone svg { width: 15px; height: 15px; }
+.gs-kpi__valor {
+    font-size: 28px; font-weight: 600;
+    letter-spacing: var(--tracking-tight); line-height: 1.1;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+.gs-kpi__pe { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-xs); color: var(--text-tertiary); }
+
+/* Papéis de cor. Entrada é o verde do DS, saída é o laranja — vermelho
+   ficaria para erro, e uma despesa prevista não é um defeito do sistema. */
+.gs-kpi--entra  .gs-kpi__icone { background: var(--success-muted); color: var(--success); }
+.gs-kpi--sai    .gs-kpi__icone { background: var(--warning-muted); color: var(--warning); }
+.gs-kpi--time   .gs-kpi__icone { background: var(--accent-muted);  color: var(--accent); }
+.gs-kpi--saldo  .gs-kpi__icone { background: var(--info-muted);    color: var(--info); }
+
+/* Saldo negativo é a única informação que precisa gritar. */
+.gs-negativo { color: var(--danger) !important; }
+.gs-positivo { color: var(--success) !important; }
+
+/* ── Barra de filtros ──────────────────────────────────────────────────── */
+.gs-barra {
+    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+    padding: var(--space-3) var(--space-4);
+}
+.gs-barra__busca { flex: 1; min-width: 200px; }
+.gs-barra__espaco { flex: 1; }
+
+.gs-filtros { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.gs-filtro {
+    height: 32px; padding: 0 var(--space-4);
+    border: 1px solid transparent; border-radius: var(--radius-pill);
+    background: transparent; color: var(--text-tertiary);
+    font-family: var(--font-sans); font-size: var(--text-sm); font-weight: 500;
+    cursor: pointer; white-space: nowrap;
+    transition: background-color var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+}
+.gs-filtro:hover { background: var(--surface-3); color: var(--text-primary); }
+.gs-filtro.is-active {
+    background: var(--accent-muted); border-color: var(--accent-border); color: var(--accent);
+}
+
+/* ── Seletor de mês ─────────────────────────────────────────────────────── */
+.gs-mes { display: flex; align-items: center; gap: var(--space-2); }
+.gs-mes__rotulo {
+    min-width: 152px; text-align: center;
+    font-size: var(--text-sm); font-weight: 600; color: var(--text-primary);
+}
+/* Só a primeira letra. `text-transform: capitalize` valeria para cada
+   palavra e escrevia "Agosto De 2026" — a preposição em maiúscula denuncia
+   que a maiúscula veio de CSS, não de português. */
+.gs-mes__rotulo::first-letter { text-transform: uppercase; }
+/* Desabilitado, não escondido: o botão sumindo faria os outros pularem de
+   lugar toda vez que a pessoa chegasse ao mês atual. */
+.gs-mes button[disabled] { opacity: 0.35; cursor: default; }
+.gs-mes button[disabled]:hover { background: transparent; border-color: var(--border-default); color: var(--text-secondary); }
+
+/* ── Cartão de seção ────────────────────────────────────────────────────── */
+.gs-secao { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); }
+.gs-secao__cabeca { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.gs-secao__lado { display: flex; align-items: center; gap: var(--space-2); }
+
+/* ── Linha de lançamento ────────────────────────────────────────────────── */
+.gs-lista { display: flex; flex-direction: column; gap: var(--space-2); }
+.gs-linha {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) auto auto;
+    align-items: center; gap: var(--space-4);
+    width: 100%; padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    background: var(--surface-3);
+    font-family: var(--font-sans); text-align: left; text-decoration: none;
+    cursor: pointer;
+    transition: border-color var(--dur-fast), background-color var(--dur-fast);
+}
+.gs-linha:hover { border-color: var(--border-default); background: var(--surface-4); }
+
+.gs-linha__marca {
+    width: 38px; height: 38px; flex-shrink: 0; border-radius: var(--radius-sm);
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-1); color: var(--text-secondary);
+    font-size: var(--text-xs); font-weight: 700;
+}
+.gs-linha__marca i, .gs-linha__marca svg { width: 17px; height: 17px; }
+
+.gs-linha__info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gs-linha__titulo {
+    font-size: var(--text-body); font-weight: 600; color: var(--text-primary); margin: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gs-linha__meta {
+    font-size: var(--text-xs); color: var(--text-tertiary); margin: 0;
+    display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+}
+/* Separador entre pedaços da meta, sem precisar de <span> por ponto. */
+.gs-linha__meta > *:not(:last-child)::after { content: '·'; margin-left: var(--space-2); color: var(--text-disabled); }
+
+.gs-linha__valor {
+    font-size: var(--text-body); font-weight: 600;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    color: var(--text-primary);
+}
+.gs-linha__lado { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
+
+/* ── Barra de participação ───────────────────────────────────────────────
+   A leitura de "quanto esse cliente representa" é comparativa; o número
+   sozinho não responde. A barra fica sob a linha, ocupando as colunas de
+   conteúdo, e não empurra nada. */
+.gs-barra-prop { height: 4px; border-radius: var(--radius-pill); background: var(--surface-4); overflow: hidden; }
+.gs-barra-prop > span { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--data-1); }
+
+/* ── Estado vazio (usa .ds-empty do tokens.css, com um empurrão) ────────── */
+.gs-vazio { padding: var(--space-10) var(--space-4); }
+
+/* ── Responsivo ─────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+    /* A linha vira duas: identidade em cima, valor e ações embaixo. Manter
+       quatro colunas nesse espaço espremia o título até virar reticência. */
+    .gs-linha {
+        grid-template-columns: 38px minmax(0, 1fr);
+        row-gap: var(--space-3);
+    }
+    .gs-linha__valor { grid-column: 2; justify-self: start; }
+    .gs-linha__lado  { grid-column: 2; justify-self: start; }
+    .gs-barra { padding: var(--space-3); }
+    .gs-barra__busca { min-width: 100%; order: -1; }
+    .gs-mes__rotulo { min-width: 120px; font-size: var(--text-xs); }
+}
