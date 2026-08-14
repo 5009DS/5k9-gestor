@@ -1,6 +1,7 @@
 import { navegar } from '../lib/rotas.js';
 import { store } from '../store.js';
 import { theme } from '../theme.js';
+import { renderTrocador } from './trocador.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    TOPNAV — mesma barra do 5K9 Forms, com os destinos do Gestor.
@@ -33,11 +34,13 @@ export const renderTopnav = (container, caminhoAtual) => {
 
     container.innerHTML = `
         <header class="tn">
-            <a href="/" class="tn__brand" aria-label="5K9 Gestor — início">
-                <img class="tn__logo" src="/assets/logo/5k9-lockup-horizontal-white.png"
-                     alt="5K9 Studio" width="816" height="185">
-                <span class="tn__product">Gestor</span>
-            </a>
+            <div class="tn__brand">
+                <a href="/" class="tn__marca" aria-label="5K9 Gestor — início">
+                    <img class="tn__logo" src="/assets/logo/5k9-lockup-horizontal-white.png"
+                         alt="5K9 Studio" width="816" height="185">
+                </a>
+                <div id="tn-trocador"></div>
+            </div>
 
             <nav class="tn__nav">
                 ${NAV_ITEMS.map(it => `
@@ -78,6 +81,7 @@ export const renderTopnav = (container, caminhoAtual) => {
     `;
 
     injectStyles();
+    renderTrocador(container.querySelector('#tn-trocador'));
     ligarEventos(container, caminhoAtual);
     if (window.lucide) lucide.createIcons();
 };
@@ -126,19 +130,18 @@ function injectStyles() {
             font-family: var(--font-sans);
         }
 
-        /* ── Marca ─────────────────────────────────────────────────────── */
-        .tn__brand { display: flex; align-items: center; gap: var(--space-2); text-decoration: none; flex-shrink: 0; }
+        /* ── Marca ──────────────────────────────────────────────────────────
+           A marca virou dois elementos: o logo, que leva ao início, e o
+           trocador de ferramenta ao lado. Antes era um <a> só englobando o
+           nome do produto — com o botão dentro, seria um botão aninhado num
+           link, e o clique disputaria entre navegar e abrir o painel. */
+        .tn__brand { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+        .tn__marca { display: flex; align-items: center; text-decoration: none; }
         /* Lockup horizontal (4.41:1). Regra do DS: dimensionar pela ALTURA,
            largura em auto, align-self centrado — em container de coluna o
            stretch deforma a marca. */
         .tn__logo { height: 22px; width: auto; align-self: center; display: block; }
         html[data-theme="light"] .tn__logo { content: url("/assets/logo/5k9-lockup-horizontal-ink.png"); }
-        .tn__product {
-            font-size: var(--text-sm); font-weight: 600;
-            letter-spacing: var(--tracking-tight); color: var(--text-tertiary);
-            padding-left: var(--space-2); margin-left: var(--space-1);
-            border-left: 1px solid var(--border-default); line-height: 1.2;
-        }
 
         /* ── Links ─────────────────────────────────────────────────────── */
         .tn__nav { display: flex; align-items: center; gap: var(--space-6); flex: 1; justify-content: center; }
@@ -233,7 +236,10 @@ function injectStyles() {
         @media (max-width: 1080px) { .tn__nav { gap: var(--space-4); } }
         @media (max-width: 900px)  {
             .tn { flex-wrap: wrap; height: auto; gap: var(--space-3); padding-bottom: var(--space-2); }
-            .tn__product { display: none; }
+            /* O trocador SOBREVIVE ao celular, ao contrário do rótulo
+               estático que ele substituiu: é o único caminho para as outras
+               ferramentas, e esconder navegação em tela pequena é como
+               seções inteiras somem sem ninguém notar. */
             .tn__nav {
                 order: 3; width: 100%; flex: 0 0 100%;
                 justify-content: flex-start; gap: var(--space-5);
