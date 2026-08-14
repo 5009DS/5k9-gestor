@@ -86,18 +86,22 @@ create index if not exists repasses_data_idx       on repasses(data desc);
 create index if not exists repasses_integrante_idx on repasses(integrante_id);
 create index if not exists repasses_entrada_idx    on repasses(entrada_id);
 
--- ── Investimentos: custo fixo e compra pontual ───────────────────────────
--- `data` é a primeira cobrança (para recorrente, é dela que o ciclo conta).
+-- ── Investimentos: custo fixo, compra pontual e compra parcelada ─────────
+-- `data` é a primeira cobrança (para recorrente, é dela que o ciclo conta;
+-- para parcelado, é a primeira parcela).
 -- `encerrado_em` guarda QUANDO um custo fixo parou, em vez de um booleano:
 -- assim os meses passados continuam calculando certo depois do cancelamento.
+-- `parcelas` só vale para tipo = 'parcelado'; o valor de cada parcela não é
+-- gravado, sai de valor_centavos / parcelas (ver lib/calculo.js).
 create table if not exists investimentos (
     id             text primary key default gen_random_uuid()::text,
     descricao      text not null,
     categoria      text,
     fornecedor     text,
     valor_centavos bigint not null default 0,
-    tipo           text not null default 'recorrente', -- recorrente | pontual
+    tipo           text not null default 'recorrente', -- recorrente | pontual | parcelado
     ciclo          text,                               -- mensal | anual | null
+    parcelas       int,                                -- só para 'parcelado'
     data           date not null default current_date,
     encerrado_em   date,
     nota           text,

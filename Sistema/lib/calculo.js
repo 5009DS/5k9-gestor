@@ -56,6 +56,10 @@ export const pesaNoMes = (inv, mes) => {
     const inicio = chaveMes(inv.data);
     if (!inicio || mes < inicio) return false;
 
+    if (inv.tipo === 'parcelado') {
+        const i = indiceDaParcela(inv, mes);
+        return i >= 0 && i < totalDeParcelas(inv);
+    }
     if (inv.tipo !== 'recorrente') return mes === inicio;
 
     // Encerrado: para de pesar a partir do mês SEGUINTE ao encerramento —
@@ -65,16 +69,88 @@ export const pesaNoMes = (inv, mes) => {
     return true;   // mensal
 };
 
+/* ── Parcelamento ─────────────────────────────────────────────────────────
+   Uma compra em 6x não sai do caixa de uma vez: saem seis parcelas, uma por
+   mês. Tratá-la como compra pontual jogaria o valor inteiro num mês só e
+   faria aquele mês parecer um desastre — e os cinco seguintes, um alívio
+   que não existiu.
+
+   O que fica gravado é o TOTAL e o NÚMERO de vezes; a parcela é derivada.
+   Guardar os três seria guardar a mesma informação duas vezes, e informação
+   duplicada diverge: bastaria alguém corrigir o total e esquecer a parcela
+   para o sistema passar a somar um valor que nunca foi cobrado.           */
+
+export const totalDeParcelas = (inv) => Math.max(1, Number(inv.parcelas) || 1);
+
+/** Quantos meses se passaram do início até `mes`. Negativo = ainda não começou. */
+export const indiceDaParcela = (inv, mes) => {
+    const [a1, m1] = chaveMes(inv.data).split('-').map(Number);
+    const [a2, m2] = String(mes).split('-').map(Number);
+    return (a2 - a1) * 12 + (m2 - m1);
+};
+
+/**
+ * Valor da parcela de índice `i` (base zero).
+ *
+ * A sobra da divisão vai toda na ÚLTIMA. R$ 1.000 em 3x são duas de 333,33 e
+ * uma de 333,34 — e não três de 333,33, que somariam 999,99 e deixariam um
+ * centavo órfão entre o total gravado e a soma do que o painel mostra.
+ */
+export const parcelaDe = (inv, i) => {
+    const n = totalDeParcelas(inv);
+    const total = Number(inv.valor_centavos) || 0;
+    const base = Math.floor(total / n);
+    return i === n - 1 ? total - base * (n - 1) : base;
+};
+
+/**
+ * Quanto ESTE investimento tira do caixa no mês informado.
+ *
+ * Existe porque, para o parcelado, o que pesa não é `valor_centavos` — é uma
+ * fração dele. Toda soma de investimento passa por aqui; ler o campo direto
+ * é o erro que faz o total do mês estourar seis vezes.
+ */
+export const valorNoMes = (inv, mes) => {
+    if (!pesaNoMes(inv, mes)) return 0;
+    if (inv.tipo !== 'parcelado') return Number(inv.valor_centavos) || 0;
+    return parcelaDe(inv, indiceDaParcela(inv, mes));
+};
+
+/** Investimentos que pesam no mês, cada um com o valor que pesa. */
 export const investimentosDoMes = (investimentos, mes) =>
-    investimentos.filter(i => pesaNoMes(i, mes));
+    investimentos
+        .filter(i => pesaNoMes(i, mes))
+        .map(i => ({ ...i, valor_no_mes: valorNoMes(i, mes),
+                     parcela: i.tipo === 'parcelado' ? indiceDaParcela(i, mes) + 1 : null }));
 
 export const investidoNoMes = (investimentos, mes) =>
-    soma(investimentosDoMes(investimentos, mes));
+    investimentos.reduce((t, i) => t + valorNoMes(i, mes), 0);
+
+/**
+ * O que ainda falta pagar de compras parceladas, contando a partir do mês
+ * SEGUINTE ao informado. Responde "quanto já está comprometido" — dívida
+ * assumida que ainda não apareceu em nenhum fechamento.
+ */
+export const parcelasEmAberto = (investimentos, mes) =>
+    investimentos
+        .filter(i => i.tipo === 'parcelado')
+        .reduce((t, i) => {
+            const n = totalDeParcelas(i);
+            const jaPassaram = indiceDaParcela(i, mes) + 1;   // inclui a do próprio mês
+            let resto = 0;
+            for (let k = Math.max(0, jaPassaram); k < n; k++) resto += parcelaDe(i, k);
+            return t + resto;
+        }, 0);
 
 /**
  * Custo fixo diluído por mês — só os recorrentes ativos. Anual dividido por
  * doze. Serve para responder "quanto o estúdio precisa faturar todo mês
  * para se manter de pé", que é outra pergunta, não o caixa do mês.
+ *
+ * Parcelamento fica de FORA de propósito: ele acaba. Somar as parcelas aqui
+ * inflaria o piso do estúdio com uma despesa que some em três meses, e é
+ * justamente esse número que se usa para decidir preço e pró-labore. Para
+ * "quanto ainda devo", ver parcelasEmAberto().
  */
 export const custoFixoMensalizado = (investimentos) =>
     investimentos
@@ -83,9 +159,16 @@ export const custoFixoMensalizado = (investimentos) =>
             ? Math.round((Number(i.valor_centavos) || 0) / 12)
             : (Number(i.valor_centavos) || 0)), 0);
 
-/** Próxima data de cobrança de um custo fixo. Null se pontual ou encerrado. */
+/**
+ * Próxima data de cobrança. Serve tanto para custo fixo quanto para a
+ * próxima parcela; devolve null para compra pontual, custo encerrado ou
+ * parcelamento já quitado.
+ */
 export const proximaRenovacao = (inv) => {
-    if (inv.tipo !== 'recorrente' || inv.encerrado_em || !inv.data) return null;
+    if (!inv.data) return null;
+    if (inv.tipo === 'pontual') return null;
+    if (inv.tipo === 'recorrente' && inv.encerrado_em) return null;
+
     const [ano, mes, dia] = String(inv.data).slice(0, 10).split('-').map(Number);
     const agora = new Date();
     const hojeD = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
@@ -97,6 +180,13 @@ export const proximaRenovacao = (inv) => {
     const passo = inv.ciclo === 'anual' ? 12 : 1;
     let guarda = 0;
     while (d < hojeD && guarda++ < 600) d = new Date(d.getFullYear(), d.getMonth() + passo, dia);
+
+    // Parcelamento acabado não tem "próxima": a data calculada acima cairia
+    // depois da última parcela e o painel anunciaria uma cobrança fantasma.
+    if (inv.tipo === 'parcelado') {
+        const i = indiceDaParcela(inv, `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        if (i >= totalDeParcelas(inv)) return null;
+    }
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 

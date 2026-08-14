@@ -64,24 +64,39 @@ const campoHTML = (c, valores) => {
             controle = `<textarea class="ds-input cp-area" id="${id}" name="${c.nome}" rows="3"
                                   placeholder="${esc(c.placeholder || '')}">${esc(v || '')}</textarea>`;
             break;
+        /* A caixa de seleção não usa o invólucro .cp-campo — rótulo e
+           controle são a mesma coisa aqui. Mas carrega o data-campo do mesmo
+           jeito: é por ele que a página mostra e esconde campos, e sem o
+           atributo a busca devolvia null e derrubava quem estivesse
+           percorrendo os campos. */
         case 'checkbox':
             return `
-                <label class="cp-check" for="${id}">
-                    <input type="checkbox" id="${id}" name="${c.nome}" ${v ? 'checked' : ''}>
-                    <span>${esc(c.rotulo)}</span>
-                </label>
-                ${dica}`;
+                <div class="cp-check-bloco" data-campo="${c.nome}">
+                    <label class="cp-check" for="${id}">
+                        <input type="checkbox" id="${id}" name="${c.nome}" ${v ? 'checked' : ''}>
+                        <span>${esc(c.rotulo)}</span>
+                    </label>
+                    ${dica}
+                </div>`;
         case 'cor':
             controle = `<input class="cp-cor" id="${id}" name="${c.nome}" type="color" value="${esc(v || '#A855FF')}">`;
             break;
+        /* Nota: não é campo, é resultado. Existe para o formulário poder
+           MOSTRAR uma conta enquanto a pessoa digita — "6x de R$ 700,00" —
+           sem transformar o valor derivado num campo editável. Três campos
+           que precisam concordar entre si é onde o dado começa a divergir. */
+        case 'nota-viva':
+            return `<p class="cp-viva" id="${id}" data-campo="${c.nome}">${esc(c.texto || '')}</p>`;
         default:
             controle = `<input class="ds-input" id="${id}" name="${c.nome}" type="text"
                                placeholder="${esc(c.placeholder || '')}" value="${esc(v ?? '')}"
                                autocomplete="off">`;
     }
 
+    // data-campo em todo invólucro: é o que permite a página mostrar e
+    // esconder campos conforme a escolha de outro campo (ver investimentos).
     return `
-        <div class="cp-campo ${c.largura === 'metade' ? 'cp-campo--metade' : ''}">
+        <div class="cp-campo ${c.largura === 'metade' ? 'cp-campo--metade' : ''}" data-campo="${c.nome}">
             <label class="cp-campo__rotulo" for="${id}">${esc(c.rotulo)} ${req}</label>
             ${controle}
             ${dica}
@@ -109,6 +124,10 @@ const colher = (painel, campos) => {
 export const abrirFormulario = ({
     titulo, subtitulo = '', campos, valores = null,
     rotuloSalvar = 'Salvar', aoSalvar, aoExcluir = null,
+    // Gancho para comportamento vivo: recebe o painel e uma função que lê os
+    // valores atuais já convertidos. Quem usa liga os próprios listeners —
+    // o formulário genérico não precisa saber que existe parcelamento.
+    aoMontar = null,
 }) => {
     const corpo = `
         <form class="cp-form" id="cp-form" novalidate>
@@ -174,6 +193,8 @@ export const abrirFormulario = ({
                 }
             });
 
+            if (aoMontar) aoMontar(painel, () => colher(painel, campos));
+
             const excluir = painel.querySelector('#cp-excluir');
             if (excluir) excluir.addEventListener('click', async () => {
                 // Confirmação em dois toques no próprio botão, sem abrir
@@ -238,8 +259,9 @@ function injectStyles() {
             font-size: var(--text-h3); font-weight: 600;
         }
 
+        .cp-check-bloco { grid-column: span 2; display: flex; flex-direction: column; gap: var(--space-2); }
+        .cp-check-bloco[hidden] { display: none; }
         .cp-check {
-            grid-column: span 2;
             display: flex; align-items: center; gap: var(--space-3);
             font-size: var(--text-sm); color: var(--text-primary); cursor: pointer;
         }
@@ -250,6 +272,21 @@ function injectStyles() {
             background: var(--surface-3); border: 1px solid var(--border-default);
             border-radius: var(--radius-md); cursor: pointer;
         }
+
+        /* Nota viva: o resultado de uma conta que o formulário faz enquanto
+           você digita. Tem peso de informação, não de aviso — por isso o
+           tom de acento e não o de erro. */
+        .cp-viva {
+            grid-column: span 2; margin: 0;
+            padding: var(--space-3) var(--space-4);
+            background: var(--accent-muted); border-radius: var(--radius-md);
+            font-size: var(--text-sm); color: var(--text-primary);
+            line-height: var(--leading-body);
+        }
+        .cp-viva b { font-variant-numeric: tabular-nums; }
+        .cp-viva[hidden] { display: none; }
+
+        .cp-campo[hidden] { display: none; }
 
         .cp-erro {
             grid-column: span 2; margin: 0;

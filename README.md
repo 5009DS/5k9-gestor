@@ -43,7 +43,7 @@ modo: a troca não leva nada junto. Depois de conectado, use "Importar".
 | `/` | Fechamento do mês: entrou, repassado, investido, saldo. Doze meses em barras, divisão de cada real, origem (clientes) e destino (time), renovações próximas. |
 | `/entradas` | Cada pagamento recebido ou previsto, com quanto dele já virou repasse. |
 | `/repasses` | Quanto cada integrante recebeu e o que está em aberto. Valores lançados à mão. |
-| `/investimentos` | Custos fixos (com a próxima cobrança) separados das compras pontuais. |
+| `/investimentos` | Compromissos (assinaturas e parcelamentos, pela próxima cobrança) separados do que pesou no mês. |
 | `/cadastros` | Clientes e time, com o acumulado de todos os tempos. |
 | `/configuracoes` | Conexão, exportar/importar, tema, dados de exemplo. |
 
@@ -63,6 +63,13 @@ realizados e aparecem em linha própria.
 R$ 1.200 em março e zero nos outros onze meses. A média existe como
 `custoFixoMensalizado()`, apresentada à parte para planejamento — nunca somada
 ao caixa realizado (`lib/calculo.js`).
+
+**Compra parcelada pesa por parcela.** Um monitor de R$ 4.200 em 6x tira
+R$ 700 do caixa por seis meses, não R$ 4.200 de uma vez. O que fica gravado é o
+total e o número de vezes; a parcela é derivada, com a sobra da divisão na
+última — R$ 1.000 em 3x são 333,33 + 333,33 + **333,34**, e a soma bate com o
+total ao centavo. Parcelamento fica fora do custo fixo mensalizado, porque
+acaba; para "quanto já está comprometido", há o indicador de parcelas em aberto.
 
 **Repasse é lançado à mão.** O sistema não calcula divisão: cada projeto tem um
 acordo próprio e quem decide é o time. O que o sistema garante é que o combinado
@@ -85,7 +92,8 @@ Sistema/
   store.js            escolhe o adaptador e expõe as cinco coleções
   theme.js            claro/escuro (mesma chave do Forms: 5k9_theme)
   db/
-    schema.sql        rodar uma vez no Supabase
+    schema.sql              rodar uma vez, num projeto Supabase novo
+    migracao-parcelas.sql   compras parceladas — rodar em bancos já criados
     local.js          adaptador localStorage
     remoto.js         adaptador Supabase (import preguiçoso da lib)
   lib/

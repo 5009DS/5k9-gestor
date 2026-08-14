@@ -62,14 +62,19 @@ const REPASSES = [
     ['ex-int-3', 380_000, 0, 20, 'previsto'],
 ];
 
+/* [descrição, categoria, fornecedor, valor, tipo, ciclo, meses atrás, parcelas]
+   O parcelado em andamento é proposital: sem ele, a coluna de compromissos e
+   o indicador de parcelas em aberto nasceriam vazios e ninguém descobriria
+   que existem. */
 const INVESTIMENTOS = [
-    ['Adobe Creative Cloud',  'Software',       'Adobe',      27_500,  'recorrente', 'mensal', 8],
-    ['Figma — 3 assentos',    'Software',       'Figma',      22_000,  'recorrente', 'mensal', 8],
-    ['Hospedagem e domínios', 'Infraestrutura', 'Vercel',      9_900,  'recorrente', 'mensal', 6],
-    ['Contabilidade',         'Serviços',       'Contec',     45_000,  'recorrente', 'mensal', 10],
-    ['Seguro de equipamento', 'Serviços',       'Porto',     180_000,  'recorrente', 'anual',  4],
-    ['Monitor de referência', 'Equipamento',    'Dell',      420_000,  'pontual',    null,     3],
-    ['Curso de tipografia',   'Educação',       'Type Camp', 189_000,  'pontual',    null,     1],
+    ['Adobe Creative Cloud',  'Software',       'Adobe',      27_500,  'recorrente', 'mensal', 8,  null],
+    ['Figma — 3 assentos',    'Software',       'Figma',      22_000,  'recorrente', 'mensal', 8,  null],
+    ['Hospedagem e domínios', 'Infraestrutura', 'Vercel',      9_900,  'recorrente', 'mensal', 6,  null],
+    ['Contabilidade',         'Serviços',       'Contec',     45_000,  'recorrente', 'mensal', 10, null],
+    ['Seguro de equipamento', 'Serviços',       'Porto',     180_000,  'recorrente', 'anual',  4,  null],
+    ['Monitor de referência', 'Equipamento',    'Dell',      420_000,  'parcelado',  null,     2,  6],
+    ['Curso de tipografia',   'Educação',       'Type Camp', 189_000,  'parcelado',  null,     5,  3],
+    ['Cadeira de trabalho',   'Equipamento',    'Herman',    320_000,  'pontual',    null,     1,  null],
 ];
 
 export const semearExemplo = async () => {
@@ -90,10 +95,11 @@ export const semearExemplo = async () => {
         });
     }
 
-    for (const [i, [descricao, categoria, fornecedor, valor, tipo, ciclo, mesesAtras]] of INVESTIMENTOS.entries()) {
+    for (const [i, [descricao, categoria, fornecedor, valor, tipo, ciclo, mesesAtras, parcelas]]
+         of INVESTIMENTOS.entries()) {
         await store.investimentos.salvar({
             id: `ex-inv-${i}`, descricao, categoria, fornecedor,
-            valor_centavos: valor, tipo, ciclo,
+            valor_centavos: valor, tipo, ciclo, parcelas,
             data: dia(mesesAtras, 5), encerrado_em: null,
         });
     }

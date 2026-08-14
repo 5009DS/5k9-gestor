@@ -4,10 +4,11 @@ import { abrirFormulario } from '../components/campos.js';
 import { toast } from '../components/toast.js';
 import { marcarAtivo, trocarSuave } from '../lib/ui.js';
 import {
-    moeda, dataBR, hoje, mesAtual, mesExtenso, somarMeses, esc, diasAte,
+    moeda, dataBR, hoje, mesAtual, mesExtenso, somarMeses, esc, diasAte, paraCentavos,
 } from '../lib/formato.js';
 import {
     investimentosDoMes, investidoNoMes, custoFixoMensalizado, proximaRenovacao,
+    parcelaDe, parcelasEmAberto, totalDeParcelas, indiceDaParcela,
 } from '../lib/calculo.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -49,15 +50,17 @@ export const renderInvestimentos = async (container) => {
     // ── Formulário ──────────────────────────────────────────────────────
     const CAMPOS = [
         { nome: 'descricao', rotulo: 'O que é', obrigatorio: true, placeholder: 'Adobe Creative Cloud' },
-        { nome: 'valor_centavos', rotulo: 'Valor', tipo: 'moeda', obrigatorio: true, largura: 'metade' },
-        { nome: 'data', rotulo: 'Data da 1ª cobrança', tipo: 'data', obrigatorio: true, largura: 'metade',
-          dica: 'Para custos fixos, é a partir dela que o ciclo conta.' },
-        { nome: 'tipo', rotulo: 'Natureza', tipo: 'select', largura: 'metade',
+        { nome: 'tipo', rotulo: 'Natureza', tipo: 'select',
           opcoes: [{ valor: 'recorrente', rotulo: 'Custo fixo (recorrente)' },
-                   { valor: 'pontual',    rotulo: 'Compra pontual' }] },
+                   { valor: 'pontual',    rotulo: 'Compra pontual (à vista)' },
+                   { valor: 'parcelado',  rotulo: 'Compra parcelada' }] },
+        { nome: 'valor_centavos', rotulo: 'Valor', tipo: 'moeda', obrigatorio: true, largura: 'metade' },
+        { nome: 'parcelas', rotulo: 'Em quantas vezes', largura: 'metade',
+          placeholder: '6', dica: 'Número de parcelas mensais.' },
         { nome: 'ciclo', rotulo: 'Ciclo', tipo: 'select', largura: 'metade',
-          opcoes: [{ valor: 'mensal', rotulo: 'Mensal' }, { valor: 'anual', rotulo: 'Anual' }],
-          dica: 'Ignorado nas compras pontuais.' },
+          opcoes: [{ valor: 'mensal', rotulo: 'Mensal' }, { valor: 'anual', rotulo: 'Anual' }] },
+        { nome: 'data', rotulo: 'Data da 1ª cobrança', tipo: 'data', obrigatorio: true, largura: 'metade' },
+        { nome: 'resumo', tipo: 'nota-viva' },
         { nome: 'categoria', rotulo: 'Categoria', tipo: 'select', largura: 'metade',
           opcoes: CATEGORIAS.map(c => ({ valor: c, rotulo: c })) },
         { nome: 'fornecedor', rotulo: 'Fornecedor', largura: 'metade', placeholder: 'Adobe' },
@@ -65,6 +68,63 @@ export const renderInvestimentos = async (container) => {
           dica: 'Ao desmarcar, o custo para de pesar nos meses seguintes — o histórico anterior permanece.' },
         { nome: 'nota', rotulo: 'Observação', tipo: 'textarea' },
     ];
+
+    /* Mostra só o que faz sentido para a natureza escolhida, e recalcula a
+       parcela enquanto a pessoa digita. Ciclo não existe em compra; parcelas
+       não existem em assinatura. Antes isso era uma dica em letra pequena
+       dizendo "ignorado nas compras pontuais" — que é o sistema pedindo para
+       a pessoa preencher e prometendo não usar. */
+    const viverFormulario = (painel) => {
+        const campo = (nome) => painel.querySelector(`[data-campo="${nome}"]`);
+        const tipo     = painel.querySelector('[name="tipo"]');
+        const valor    = painel.querySelector('[name="valor_centavos"]');
+        const parcelas = painel.querySelector('[name="parcelas"]');
+        const resumo   = campo('resumo');
+
+        /* Troca o texto do rótulo preservando o asterisco de obrigatório —
+           ele é um elemento filho, e um textContent= cru o levaria embora. */
+        const trocarRotulo = (nome, texto) => {
+            const el = campo(nome).querySelector('.cp-campo__rotulo');
+            const req = el.querySelector('.cp-req');
+            el.textContent = texto + ' ';
+            if (req) el.appendChild(req);
+        };
+
+        const pintar = () => {
+            const t = tipo.value;
+            campo('parcelas').hidden = t !== 'parcelado';
+            campo('ciclo').hidden    = t !== 'recorrente';
+            campo('ativo').hidden    = t !== 'recorrente';
+
+            trocarRotulo('valor_centavos', t === 'parcelado' ? 'Valor total' : 'Valor');
+            trocarRotulo('data', t === 'parcelado' ? 'Data da 1ª parcela'
+                               : t === 'pontual'   ? 'Data da compra'
+                               : 'Data da 1ª cobrança');
+
+            if (t !== 'parcelado') { resumo.hidden = true; return; }
+
+            const total = paraCentavos(valor.value);
+            const n = Math.max(1, parseInt(parcelas.value, 10) || 0);
+            if (!total || !parcelas.value) {
+                resumo.hidden = false;
+                resumo.textContent = 'Informe o valor total e o número de vezes para ver a parcela.';
+                return;
+            }
+            const falso = { valor_centavos: total, parcelas: n };
+            const primeira = parcelaDe(falso, 0);
+            const ultima   = parcelaDe(falso, n - 1);
+            resumo.hidden = false;
+            resumo.innerHTML = primeira === ultima
+                ? `<b>${n}x de ${moeda(primeira)}</b> — total de ${moeda(total)}.`
+                : `<b>${n - 1}x de ${moeda(primeira)}</b> e a última de <b>${moeda(ultima)}</b>
+                   — total de ${moeda(total)}. A sobra da divisão vai na última parcela.`;
+        };
+
+        tipo.addEventListener('change', pintar);
+        valor.addEventListener('input', pintar);
+        parcelas.addEventListener('input', pintar);
+        pintar();
+    };
 
     const recarregar = async () => {
         store.limparCache();
@@ -80,17 +140,43 @@ export const renderInvestimentos = async (container) => {
             ? { ...inv, ativo: !inv.encerrado_em }
             : { data: hoje(), tipo: 'recorrente', ciclo: 'mensal', categoria: 'Software', ativo: true },
         rotuloSalvar: inv ? 'Salvar' : 'Lançar',
+        aoMontar: viverFormulario,
         aoSalvar: async ({ ativo, ...dados }) => {
             /* O formulário pergunta "ainda está ativo?"; o banco guarda
                QUANDO parou. A tradução acontece aqui, e não no campo, porque
                a data de encerramento é o que permite recalcular meses
                passados sem apagá-los — um booleano sozinho reescreveria o
                histórico toda vez que alguém cancelasse uma assinatura. */
-            dados.encerrado_em = ativo
-                ? null
-                : (inv?.encerrado_em || hoje());
-            if (dados.tipo !== 'recorrente') dados.ciclo = null;
-            await store.investimentos.salvar(dados);
+            dados.encerrado_em = dados.tipo === 'recorrente' && !ativo
+                ? (inv?.encerrado_em || hoje())
+                : null;
+
+            // Limpa o que não pertence à natureza escolhida. Sem isto, mudar
+            // uma assinatura para compra parcelada deixaria `ciclo: 'mensal'`
+            // no registro — inofensivo hoje, e exatamente o tipo de lixo que
+            // faz um relatório futuro contar a linha duas vezes.
+            dados.ciclo    = dados.tipo === 'recorrente' ? dados.ciclo : null;
+            dados.parcelas = dados.tipo === 'parcelado'
+                ? Math.max(1, parseInt(dados.parcelas, 10) || 1)
+                : null;
+
+            if (dados.tipo === 'parcelado' && dados.parcelas < 2) {
+                throw new Error('Compra parcelada precisa de pelo menos 2 vezes. '
+                              + 'Para pagamento único, escolha "Compra pontual".');
+            }
+
+            try {
+                await store.investimentos.salvar(dados);
+            } catch (e) {
+                // A coluna nova pode não existir se a migração não rodou. A
+                // mensagem crua do Postgres fala de schema cache e não ajuda
+                // ninguém a resolver.
+                if (/parcelas/.test(e.message || '')) {
+                    throw new Error('O banco ainda não tem o campo de parcelas. '
+                                  + 'Rode db/migracao-parcelas.sql no Supabase e tente de novo.');
+                }
+                throw e;
+            }
             await recarregar();
             toast(inv ? 'Investimento atualizado.' : 'Investimento lançado.');
         },
@@ -105,13 +191,26 @@ export const renderInvestimentos = async (container) => {
 
     // ── Desenho ─────────────────────────────────────────────────────────
     const desenhar = () => {
-        const fixos = investimentos
-            .filter(i => i.tipo === 'recorrente')
-            .filter(i => filtro === 'todos' || filtro === 'recorrente')
-            .map(i => ({ ...i, quando: proximaRenovacao(i) }))
+        /* Coluna da esquerda: o que ainda vai cobrar de novo — assinatura
+           ativa e parcelamento em andamento. A compra à vista não entra:
+           ela já aconteceu e vive no histórico do mês, não numa lista de
+           compromissos. */
+        const compromissos = investimentos
+            .filter(i => i.tipo === 'recorrente' || i.tipo === 'parcelado')
+            .filter(i => filtro === 'todos' || i.tipo === filtro)
+            .map(i => ({
+                ...i,
+                quando: proximaRenovacao(i),
+                pagas: i.tipo === 'parcelado'
+                    ? Math.min(totalDeParcelas(i), Math.max(0, indiceDaParcela(i, mes) + 1))
+                    : null,
+            }))
+            .map(i => ({ ...i, quitado: i.tipo === 'parcelado' && i.pagas >= totalDeParcelas(i) }))
             .sort((a, b) => {
-                // Ativos primeiro, e dentro deles o que vence antes.
-                if (!!a.encerrado_em !== !!b.encerrado_em) return a.encerrado_em ? 1 : -1;
+                // Encerrado e quitado descem; entre os vivos, o que vence antes.
+                const aMorto = !!a.encerrado_em || a.quitado;
+                const bMorto = !!b.encerrado_em || b.quitado;
+                if (aMorto !== bMorto) return aMorto ? 1 : -1;
                 return String(a.quando || '9999').localeCompare(String(b.quando || '9999'));
             });
 
@@ -122,6 +221,9 @@ export const renderInvestimentos = async (container) => {
         const totalMes = investidoNoMes(investimentos, mes);
         const fixoMensal = custoFixoMensalizado(investimentos);
         const ativos = investimentos.filter(i => i.tipo === 'recorrente' && !i.encerrado_em).length;
+        const emAberto = parcelasEmAberto(investimentos, mes);
+        const parceladosVivos = investimentos.filter(i =>
+            i.tipo === 'parcelado' && indiceDaParcela(i, mes) + 1 < totalDeParcelas(i)).length;
 
         content.innerHTML = `
             <section class="gs-kpis">
@@ -151,6 +253,23 @@ export const renderInvestimentos = async (container) => {
                     <span class="gs-kpi__valor">${moeda(fixoMensal * 12)}</span>
                     <span class="gs-kpi__pe"><span>projeção, se nada mudar</span></span>
                 </article>
+
+                <!-- Dívida assumida que ainda não apareceu em fechamento
+                     nenhum. É a pergunta "quanto já está comprometido", que
+                     o custo fixo mensalizado não responde: parcelamento
+                     acaba, assinatura não. -->
+                <article class="ds-card gs-kpi ${emAberto ? 'gs-kpi--sai' : ''}">
+                    <div class="gs-kpi__topo">
+                        <span class="gs-kpi__rotulo">Parcelas em aberto</span>
+                        <span class="gs-kpi__icone"><i data-lucide="credit-card"></i></span>
+                    </div>
+                    <span class="gs-kpi__valor">${moeda(emAberto)}</span>
+                    <span class="gs-kpi__pe"><span>${
+                        parceladosVivos
+                            ? `${parceladosVivos} compra${parceladosVivos === 1 ? '' : 's'} ainda pagando`
+                            : 'nada parcelado em aberto'
+                    }</span></span>
+                </article>
             </section>
 
             <section class="ds-card gs-barra">
@@ -164,7 +283,8 @@ export const renderInvestimentos = async (container) => {
                 <div class="gs-filtros" id="iv-filtro">
                     <button class="gs-filtro" data-filtro="todos"      aria-pressed="false">Todos</button>
                     <button class="gs-filtro" data-filtro="recorrente" aria-pressed="false">Custos fixos</button>
-                    <button class="gs-filtro" data-filtro="pontual"    aria-pressed="false">Compras</button>
+                    <button class="gs-filtro" data-filtro="parcelado"  aria-pressed="false">Parceladas</button>
+                    <button class="gs-filtro" data-filtro="pontual"    aria-pressed="false">À vista</button>
                 </div>
             </section>
 
@@ -172,11 +292,11 @@ export const renderInvestimentos = async (container) => {
                 <article class="ds-card gs-secao">
                     <div class="gs-secao__cabeca">
                         <div>
-                            <h2 class="ds-card-title">Custos fixos</h2>
-                            <span class="ds-card-sub">Ordenados pela próxima cobrança</span>
+                            <h2 class="ds-card-title">Compromissos</h2>
+                            <span class="ds-card-sub">Assinaturas e parcelamentos, pela próxima cobrança</span>
                         </div>
                     </div>
-                    <div id="iv-fixos">${listaFixos(fixos)}</div>
+                    <div id="iv-fixos">${listaCompromissos(compromissos)}</div>
                 </article>
 
                 <article class="ds-card gs-secao">
@@ -216,30 +336,51 @@ export const renderInvestimentos = async (container) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-const listaFixos = (fixos) => {
-    if (!fixos.length) return vazio('repeat', 'Nenhum custo fixo cadastrado.');
+const listaCompromissos = (lista) => {
+    if (!lista.length) return vazio('repeat', 'Nenhuma assinatura ou parcelamento em andamento.');
 
-    return `<div class="gs-lista">${fixos.map(i => {
-        const encerrado = !!i.encerrado_em;
+    return `<div class="gs-lista">${lista.map(i => {
+        const parcelado = i.tipo === 'parcelado';
+        const morto = !!i.encerrado_em || i.quitado;
         const dias = i.quando ? diasAte(i.quando) : null;
+        const n = totalDeParcelas(i);
+
+        /* No parcelado em andamento o destaque é a PARCELA: é ela que sai da
+           conta todo mês, e o total vai na linha de apoio. Já quitado, a
+           parcela deixou de ser notícia — o que informa é quanto a compra
+           custou no fim, então o destaque volta a ser o total. */
+        const destaque = !parcelado || i.quitado
+            ? i.valor_centavos
+            : parcelaDe(i, Math.min(i.pagas, n - 1));
+
         return `
-        <button class="gs-linha ${encerrado ? 'iv-encerrado' : ''}" data-id="${esc(i.id)}">
-            <span class="gs-linha__marca"><i data-lucide="${encerrado ? 'circle-slash' : 'repeat'}"></i></span>
+        <button class="gs-linha ${morto ? 'iv-encerrado' : ''}" data-id="${esc(i.id)}">
+            <span class="gs-linha__marca">
+                <i data-lucide="${morto ? 'circle-check' : parcelado ? 'credit-card' : 'repeat'}"></i>
+            </span>
             <div class="gs-linha__info">
                 <p class="gs-linha__titulo">${esc(i.descricao)}</p>
                 <p class="gs-linha__meta">
                     <span>${esc(i.fornecedor || i.categoria || 'Sem categoria')}</span>
-                    <span>${i.ciclo === 'anual' ? 'anual' : 'mensal'}</span>
-                    ${encerrado ? `<span>encerrado em ${dataBR(i.encerrado_em)}</span>` : ''}
+                    ${parcelado
+                        ? `<span>${n}x · total ${moeda(i.valor_centavos)}</span>`
+                        : `<span>${i.ciclo === 'anual' ? 'anual' : 'mensal'}</span>`}
+                    ${i.encerrado_em ? `<span>encerrado em ${dataBR(i.encerrado_em)}</span>` : ''}
                 </p>
+                ${parcelado ? `
+                    <span class="iv-progresso" role="img"
+                          aria-label="${i.pagas} de ${n} parcelas pagas">
+                        <span style="width:${Math.round((i.pagas / n) * 100)}%"></span>
+                    </span>` : ''}
             </div>
-            <span class="gs-linha__valor">${moeda(i.valor_centavos)}</span>
+            <span class="gs-linha__valor">${moeda(destaque)}</span>
             <span class="gs-linha__lado">
-                ${encerrado
-                    ? `<span class="ds-chip">inativo</span>`
-                    : `<span class="ds-chip ${dias !== null && dias <= 7 ? 'ds-chip--warning' : ''}">
-                           ${dias === 0 ? 'vence hoje' : dias === 1 ? 'vence amanhã' : `em ${dias} dias`}
-                       </span>`}
+                ${i.quitado ? `<span class="ds-chip ds-chip--success">quitado</span>`
+                : i.encerrado_em ? `<span class="ds-chip">inativo</span>`
+                : `<span class="ds-chip ${dias !== null && dias <= 7 ? 'ds-chip--warning' : ''}">
+                       ${parcelado ? `${i.pagas}/${n} · ` : ''}${
+                           dias === 0 ? 'hoje' : dias === 1 ? 'amanhã' : `em ${dias} dias`}
+                   </span>`}
             </span>
         </button>`;
     }).join('')}</div>`;
@@ -248,19 +389,29 @@ const listaFixos = (fixos) => {
 const listaMes = (doMes) => {
     if (!doMes.length) return vazio('receipt', 'Nenhuma cobrança neste mês.');
 
+    const icone = { recorrente: 'repeat', parcelado: 'credit-card', pontual: 'shopping-bag' };
+
     return `<div class="gs-lista">${doMes.map(i => `
         <button class="gs-linha" data-id="${esc(i.id)}">
-            <span class="gs-linha__marca"><i data-lucide="${i.tipo === 'recorrente' ? 'repeat' : 'shopping-bag'}"></i></span>
+            <span class="gs-linha__marca"><i data-lucide="${icone[i.tipo] || 'shopping-bag'}"></i></span>
             <div class="gs-linha__info">
                 <p class="gs-linha__titulo">${esc(i.descricao)}</p>
                 <p class="gs-linha__meta">
                     <span>${esc(i.categoria || 'Sem categoria')}</span>
-                    <span>${i.tipo === 'recorrente' ? 'custo fixo' : dataBR(i.data)}</span>
+                    ${i.tipo === 'parcelado'
+                        ? `<span>parcela ${i.parcela} de ${totalDeParcelas(i)}</span>`
+                        : `<span>${i.tipo === 'recorrente' ? 'custo fixo' : dataBR(i.data)}</span>`}
                 </p>
             </div>
-            <span class="gs-linha__valor">${moeda(i.valor_centavos)}</span>
+            <!-- valor_no_mes, não valor_centavos: no parcelado o que pesa
+                 neste mês é a parcela, não o total da compra. -->
+            <span class="gs-linha__valor">${moeda(i.valor_no_mes)}</span>
             <span class="gs-linha__lado">
-                <span class="ds-chip">${i.tipo === 'recorrente' ? (i.ciclo === 'anual' ? 'anual' : 'mensal') : 'pontual'}</span>
+                <span class="ds-chip">${
+                    i.tipo === 'recorrente' ? (i.ciclo === 'anual' ? 'anual' : 'mensal')
+                    : i.tipo === 'parcelado' ? `${totalDeParcelas(i)}x`
+                    : 'à vista'
+                }</span>
             </span>
         </button>`).join('')}</div>`;
 };
@@ -274,10 +425,22 @@ const vazio = (icone, texto) => `
 const ESTILOS = `
 <style>
 .iv-linha { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--bento-gap); align-items: start; }
-/* Encerrado continua na lista, mas recuado: é histórico, não item de
-   trabalho. Some da leitura sem sumir do registro. */
+/* Encerrado e quitado continuam na lista, mas recuados: é histórico, não
+   item de trabalho. Somem da leitura sem sumir do registro. */
 .iv-encerrado { opacity: 0.55; }
 .iv-encerrado:hover { opacity: 1; }
+
+/* Progresso do parcelamento — fininho, sob o nome. Responde "falta muito?"
+   sem exigir a leitura do "3/6" ao lado. */
+.iv-progresso {
+    display: block; height: 3px; margin-top: 6px;
+    border-radius: var(--radius-pill); background: var(--surface-4); overflow: hidden;
+}
+.iv-progresso > span {
+    display: block; height: 100%; border-radius: var(--radius-pill);
+    background: var(--data-2);
+    transition: width var(--dur-base) var(--ease-out);
+}
 @media (max-width: 1080px) { .iv-linha { grid-template-columns: minmax(0, 1fr); } }
 </style>
 `;
