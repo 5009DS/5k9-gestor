@@ -6,7 +6,7 @@ import {
 } from '../lib/formato.js';
 import {
     fluxoDoMes, serieMensal, variacao, porCliente, porIntegrante,
-    custoFixoMensalizado, proximaRenovacao, primeiroMesComDado,
+    custoFixoMensalizado, proximaRenovacao, primeiroMesComDado, reservaDoEstudio,
 } from '../lib/calculo.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -81,6 +81,7 @@ const corpo = (dados, mes, { clientes, integrantes, entradas, repasses, investim
     const timeDoMes     = porIntegrante(repasses, integrantes, mes);
 
     const fixoMensal = custoFixoMensalizado(investimentos);
+    const reserva = reservaDoEstudio(repasses, investimentos, mes);
 
     // Renovações dos próximos 45 dias. A janela é curta de propósito: uma
     // lista de tudo que vence no ano vira parede de texto e ninguém lê.
@@ -99,7 +100,11 @@ const corpo = (dados, mes, { clientes, integrantes, entradas, repasses, investim
                   f.aReceber ? `${moeda(f.aReceber)} ainda previsto` : '')}
             ${kpi('Repassado ao time', f.repassado, 'users', 'time',
                   delta(f.repassado, anterior.repassado),
-                  f.aRepassar ? `${moeda(f.aRepassar)} a pagar` : '')}
+                  // As duas informações convivem: uma explica o bruto, a
+                  // outra o que falta. Trocar uma pela outra escondia a
+                  // pendência justamente nos meses em que houve retenção.
+                  [f.retido    ? `${moeda(f.retido)} retidos de ${moeda(f.bruto)} brutos` : '',
+                   f.aRepassar ? `${moeda(f.aRepassar)} a pagar` : ''].filter(Boolean).join(' · '))}
             ${kpi('Investimentos', f.investido, 'receipt', 'sai',
                   delta(f.investido, anterior.investido),
                   `${moeda(fixoMensal)}/mês em custo fixo`)}
@@ -109,7 +114,7 @@ const corpo = (dados, mes, { clientes, integrantes, entradas, repasses, investim
         <!-- ══ Ano em barras + pendências ══════════════════════════════ -->
         <section class="pn-linha pn-linha--1">
             ${cartaoGrafico(serie, teto, mes)}
-            ${cartaoDivisao(f)}
+            ${cartaoDivisao(f, reserva)}
         </section>
 
         <!-- ══ Origem e destino ════════════════════════════════════════ -->
@@ -194,11 +199,12 @@ const cartaoGrafico = (serie, teto, mesAtivo) => `
 
 /* Pendências e divisão do mês: o que ainda não aconteceu, e para onde foi
    cada real do que aconteceu. */
-const cartaoDivisao = (f) => {
+const cartaoDivisao = (f, reserva) => {
     const base = f.entrou || 1;
-    const fTime  = pct(f.repassado, base);
-    const fCusto = pct(f.investido, base);
-    const fSobra = Math.max(0, 100 - fTime - fCusto);
+    const fTime    = pct(f.repassado, base);
+    const fEstudio = pct(f.retido, base);
+    const fCusto   = pct(f.investido, base);
+    const fSobra   = Math.max(0, 100 - fTime - fEstudio - fCusto);
 
     return `
     <div class="pn-coluna">
@@ -207,17 +213,33 @@ const cartaoDivisao = (f) => {
             <span class="ds-card-sub">Divisão de cada real que entrou no mês</span>
 
             <div class="pn-fita" role="img"
-                 aria-label="Time ${fTime}%, custos ${fCusto}%, retido ${fSobra}%">
-                <span class="pn-fita__parte pn-fita__parte--time"  style="width:${fTime}%"></span>
-                <span class="pn-fita__parte pn-fita__parte--custo" style="width:${fCusto}%"></span>
-                <span class="pn-fita__parte pn-fita__parte--sobra" style="width:${fSobra}%"></span>
+                 aria-label="Time ${fTime}%, reserva ${fEstudio}%, custos ${fCusto}%, livre ${fSobra}%">
+                <span class="pn-fita__parte pn-fita__parte--time"    style="width:${fTime}%"></span>
+                <span class="pn-fita__parte pn-fita__parte--estudio" style="width:${fEstudio}%"></span>
+                <span class="pn-fita__parte pn-fita__parte--custo"   style="width:${fCusto}%"></span>
+                <span class="pn-fita__parte pn-fita__parte--sobra"   style="width:${fSobra}%"></span>
             </div>
 
             <ul class="pn-fita__chaves">
                 <li><i class="pn-amostra pn-amostra--time"></i> Time <b>${fTime}%</b></li>
+                ${f.retido ? `<li><i class="pn-amostra pn-amostra--estudio"></i> Reserva <b>${fEstudio}%</b></li>` : ''}
                 <li><i class="pn-amostra pn-amostra--custo"></i> Custos <b>${fCusto}%</b></li>
-                <li><i class="pn-amostra pn-amostra--sobra"></i> Retido <b>${fSobra}%</b></li>
+                <li><i class="pn-amostra pn-amostra--sobra"></i> Livre <b>${fSobra}%</b></li>
             </ul>
+
+            <!-- A reserva é acumulada, não do mês: é um saldo. Fica sob a
+                 fita porque explica o que aconteceu com a fatia retida ao
+                 longo do tempo, não só neste mês. -->
+            <hr class="ds-divider">
+            <a href="/investimentos" class="pn-reserva">
+                <span class="pn-reserva__texto">
+                    <b>Reserva do estúdio</b>
+                    <small>${moeda(reserva.separado)} retidos − ${moeda(reserva.gasto)} investidos</small>
+                </span>
+                <span class="pn-reserva__valor ${reserva.disponivel < 0 ? 'gs-negativo' : ''}">
+                    ${moeda(reserva.disponivel)}
+                </span>
+            </a>
         </article>
 
         <article class="ds-card pn-pendencias">
@@ -358,9 +380,10 @@ const ESTILOS = `
 .pn-amostra { width: 9px; height: 9px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
 .pn-amostra--entra { background: var(--data-1); }
 .pn-amostra--sai   { background: var(--surface-4); border: 1px solid var(--border-default); }
-.pn-amostra--time  { background: var(--data-1); }
-.pn-amostra--custo { background: var(--data-2); }
-.pn-amostra--sobra { background: var(--data-5); }
+.pn-amostra--time    { background: var(--data-1); }
+.pn-amostra--estudio { background: var(--data-3); }
+.pn-amostra--custo   { background: var(--data-2); }
+.pn-amostra--sobra   { background: var(--data-5); }
 
 .pn-grafico { display: flex; align-items: flex-end; gap: var(--space-2); height: 210px; }
 .pn-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
@@ -396,9 +419,28 @@ const ESTILOS = `
 .pn-divisao { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
 .pn-fita { display: flex; height: 10px; border-radius: var(--radius-pill); overflow: hidden; background: var(--surface-4); }
 .pn-fita__parte { display: block; height: 100%; transition: width var(--dur-base) var(--ease-out); }
-.pn-fita__parte--time  { background: var(--data-1); }
-.pn-fita__parte--custo { background: var(--data-2); }
-.pn-fita__parte--sobra { background: var(--data-5); }
+.pn-fita__parte--time    { background: var(--data-1); }
+.pn-fita__parte--estudio { background: var(--data-3); }
+.pn-fita__parte--custo   { background: var(--data-2); }
+.pn-fita__parte--sobra   { background: var(--data-5); }
+
+/* ── Reserva do estúdio ──────────────────────────────────────────────── */
+.pn-reserva {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    background: var(--surface-3); text-decoration: none;
+    transition: border-color var(--dur-fast), background-color var(--dur-fast);
+}
+.pn-reserva:hover { border-color: var(--accent-border); background: var(--surface-4); }
+.pn-reserva__texto { display: flex; flex-direction: column; min-width: 0; }
+.pn-reserva__texto b { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.pn-reserva__texto small { font-size: var(--text-xs); color: var(--text-tertiary); }
+.pn-reserva__valor {
+    font-size: var(--text-h3); font-weight: 600; color: var(--text-primary);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 .pn-fita__chaves { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-4); }
 .pn-fita__chaves li { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-tertiary); }
 .pn-fita__chaves b { color: var(--text-primary); font-variant-numeric: tabular-nums; }

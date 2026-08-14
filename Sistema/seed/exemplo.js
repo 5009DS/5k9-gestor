@@ -49,17 +49,27 @@ const ENTRADAS = [
     ['ex-cli-1', 'Consultoria — 2ª parcela',        1_400_000, 0, 28, 'previsto', 'ted'],
 ];
 
+/* [integrante, bruto, meses atrás, dia, situação, retido para o estúdio]
+   A retenção aparece em parte dos lançamentos, não em todos: é assim no uso
+   real, e um exemplo em que TODO repasse retém ensinaria que o campo é
+   obrigatório. */
 const REPASSES = [
-    ['ex-int-1', 500_000, 5, 8,  'pago'], ['ex-int-2', 380_000, 5, 8,  'pago'],
-    ['ex-int-1', 620_000, 4, 12, 'pago'], ['ex-int-3', 420_000, 4, 12, 'pago'],
-    ['ex-int-2', 540_000, 4, 12, 'pago'],
-    ['ex-int-1', 900_000, 3, 6,  'pago'], ['ex-int-4', 350_000, 3, 6,  'pago'],
-    ['ex-int-3', 610_000, 3, 6,  'pago'],
-    ['ex-int-1', 700_000, 2, 9,  'pago'], ['ex-int-2', 430_000, 2, 9,  'pago'],
-    ['ex-int-1', 880_000, 1, 7,  'pago'], ['ex-int-3', 520_000, 1, 7,  'pago'],
-    ['ex-int-4', 300_000, 1, 7,  'pago'],
-    ['ex-int-1', 640_000, 0, 12, 'pago'], ['ex-int-2', 470_000, 0, 12, 'pago'],
-    ['ex-int-3', 380_000, 0, 20, 'previsto'],
+    ['ex-int-1', 500_000, 5, 8,  'pago',     30_000],
+    ['ex-int-2', 380_000, 5, 8,  'pago',     20_000],
+    ['ex-int-1', 620_000, 4, 12, 'pago',     40_000],
+    ['ex-int-3', 420_000, 4, 12, 'pago',          0],
+    ['ex-int-2', 540_000, 4, 12, 'pago',     30_000],
+    ['ex-int-1', 900_000, 3, 6,  'pago',     60_000],
+    ['ex-int-4', 350_000, 3, 6,  'pago',          0],
+    ['ex-int-3', 610_000, 3, 6,  'pago',     35_000],
+    ['ex-int-1', 700_000, 2, 9,  'pago',     45_000],
+    ['ex-int-2', 430_000, 2, 9,  'pago',     25_000],
+    ['ex-int-1', 880_000, 1, 7,  'pago',     55_000],
+    ['ex-int-3', 520_000, 1, 7,  'pago',     30_000],
+    ['ex-int-4', 300_000, 1, 7,  'pago',          0],
+    ['ex-int-1', 640_000, 0, 12, 'pago',     40_000],
+    ['ex-int-2', 470_000, 0, 12, 'pago',     30_000],
+    ['ex-int-3', 380_000, 0, 20, 'previsto',      0],
 ];
 
 /* [descrição, categoria, fornecedor, valor, tipo, ciclo, meses atrás, parcelas]
@@ -88,10 +98,11 @@ export const semearExemplo = async () => {
         });
     }
 
-    for (const [i, [integrante_id, valor, mesesAtras, d, status]] of REPASSES.entries()) {
+    for (const [i, [integrante_id, valor, mesesAtras, d, status, retido]] of REPASSES.entries()) {
         await store.repasses.salvar({
             id: `ex-rep-${i}`, integrante_id,
-            valor_centavos: valor, data: dia(mesesAtras, d), status, metodo: 'pix',
+            valor_centavos: valor, retido_centavos: retido,
+            data: dia(mesesAtras, d), status, metodo: 'pix',
         });
     }
 

@@ -5,8 +5,11 @@ import { toast } from '../components/toast.js';
 import { marcarAtivo, trocarSuave } from '../lib/ui.js';
 import {
     moeda, dataBR, hoje, mesAtual, mesExtenso, somarMeses, chaveMes, esc, pct,
+    paraCentavos,
 } from '../lib/formato.js';
-import { porIntegrante, recebidoNoMes } from '../lib/calculo.js';
+import {
+    porIntegrante, recebidoNoMes, liquidoDoRepasse, retidoNoMes, reservaDoEstudio,
+} from '../lib/calculo.js';
 import { iniciais } from './painel.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -23,8 +26,9 @@ import { iniciais } from './painel.js';
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export const renderRepasses = async (container) => {
-    let [repasses, integrantes, entradas] = await Promise.all([
-        store.repasses.listar(), store.integrantes.listar(), store.entradas.listar(),
+    let [repasses, integrantes, entradas, investimentos] = await Promise.all([
+        store.repasses.listar(), store.integrantes.listar(),
+        store.entradas.listar(), store.investimentos.listar(),
     ]);
 
     let mes = mesAtual();
@@ -49,7 +53,11 @@ export const renderRepasses = async (container) => {
           opcoes: [{ valor: '', rotulo: integrantes.length ? 'Selecione…' : 'Nenhum integrante cadastrado' },
                    ...integrantes.filter(i => i.ativo !== false).map(i => ({ valor: i.id, rotulo: i.nome }))],
           dica: integrantes.length ? '' : 'Cadastre o time em Cadastros antes de lançar repasses.' },
-        { nome: 'valor_centavos', rotulo: 'Valor', tipo: 'moeda', obrigatorio: true, largura: 'metade' },
+        { nome: 'valor_centavos', rotulo: 'Valor bruto', tipo: 'moeda', obrigatorio: true, largura: 'metade',
+          dica: 'O que foi alocado a esta pessoa, antes da retenção.' },
+        { nome: 'retido_centavos', rotulo: 'Fica com o estúdio', tipo: 'moeda', largura: 'metade',
+          dica: 'Deixe zerado se nada for retido.' },
+        { nome: 'resumo', tipo: 'nota-viva' },
         { nome: 'data', rotulo: 'Data', tipo: 'data', obrigatorio: true, largura: 'metade' },
         { nome: 'status', rotulo: 'Situação', tipo: 'select', largura: 'metade',
           opcoes: [{ valor: 'pago', rotulo: 'Pago' }, { valor: 'previsto', rotulo: 'A pagar' }],
@@ -74,10 +82,46 @@ export const renderRepasses = async (container) => {
         { nome: 'nota', rotulo: 'Observação', tipo: 'textarea', placeholder: 'Parcela, acordo, referência…' },
     ];
 
+    /* Mostra a conta enquanto a pessoa digita: bruto, retido e o que de fato
+       sai para o integrante. Sem isso, "R$ 2.000 com R$ 150 retidos" exige
+       que quem lança faça a subtração de cabeça e confie que o sistema fez a
+       mesma — e é justamente aí que a conferência contra o extrato falha. */
+    const viverFormulario = (painel) => {
+        const valor  = painel.querySelector('[name="valor_centavos"]');
+        const retido = painel.querySelector('[name="retido_centavos"]');
+        const resumo = painel.querySelector('[data-campo="resumo"]');
+
+        const pintar = () => {
+            const bruto = paraCentavos(valor.value);
+            const fica  = paraCentavos(retido.value);
+            if (!bruto || !fica) { resumo.hidden = true; return; }
+
+            resumo.hidden = false;
+            if (fica > bruto) {
+                resumo.innerHTML = `<b>A retenção é maior que o repasse.</b>
+                    Não dá para reter ${moeda(fica)} de ${moeda(bruto)}.`;
+                resumo.classList.add('cp-viva--erro');
+                return;
+            }
+            resumo.classList.remove('cp-viva--erro');
+            resumo.innerHTML = `O integrante recebe <b>${moeda(bruto - fica)}</b>
+                e <b>${moeda(fica)}</b> ficam na reserva do estúdio
+                (${pct(fica, bruto)}% do repasse).`;
+        };
+
+        valor.addEventListener('input', pintar);
+        retido.addEventListener('input', pintar);
+        pintar();
+    };
+
     const recarregar = async () => {
         store.limparCache();
-        [repasses, integrantes, entradas] = await Promise.all([
-            store.repasses.listar(), store.integrantes.listar(), store.entradas.listar(),
+        // Investimentos entram aqui só para o cálculo da reserva do estúdio:
+        // ela é retido menos investido, e sem os dois lados o número seria
+        // sempre otimista.
+        [repasses, integrantes, entradas, investimentos] = await Promise.all([
+            store.repasses.listar(), store.integrantes.listar(),
+            store.entradas.listar(), store.investimentos.listar(),
         ]);
         desenhar();
     };
@@ -90,8 +134,25 @@ export const renderRepasses = async (container) => {
         campos: camposDe(),
         valores: repasse || { data: hoje(), status: 'pago' },
         rotuloSalvar: repasse ? 'Salvar' : 'Lançar',
+        aoMontar: viverFormulario,
         aoSalvar: async (dados) => {
-            await store.repasses.salvar(dados);
+            dados.retido_centavos = dados.retido_centavos || 0;
+
+            // O banco tem a mesma trava (CHECK), mas rejeitar aqui devolve uma
+            // frase em português em vez do erro cru do Postgres.
+            if (dados.retido_centavos > dados.valor_centavos) {
+                throw new Error('A parte do estúdio não pode ser maior que o repasse.');
+            }
+
+            try {
+                await store.repasses.salvar(dados);
+            } catch (e) {
+                if (/retido/.test(e.message || '')) {
+                    throw new Error('O banco ainda não tem o campo de retenção. '
+                                  + 'Rode db/migracao-retencao.sql no Supabase e tente de novo.');
+                }
+                throw e;
+            }
             if (escopo === 'mes' && chaveMes(dados.data) !== mes) mes = chaveMes(dados.data);
             await recarregar();
             toast(repasse ? 'Repasse atualizado.' : 'Repasse lançado.');
@@ -117,6 +178,12 @@ export const renderRepasses = async (container) => {
         const doPeriodo = noPeriodo();
         const resumo = porIntegrante(doPeriodo, integrantes);
         const totalPago = resumo.reduce((t, r) => t + r.pago, 0);
+        const retido    = resumo.reduce((t, r) => t + r.retido, 0);
+        const bruto     = resumo.reduce((t, r) => t + r.bruto, 0);
+        // A reserva é acumulada até o mês visto, não do mês: ela é um saldo,
+        // e saldo que zera todo dia 1º não seria saldo nenhum.
+        const reserva = reservaDoEstudio(repasses, investimentos,
+                                         escopo === 'mes' ? mes : mesAtual());
         // Base de comparação: quanto entrou no mesmo mês. Responde "que
         // fatia do faturamento virou repasse", que é a pergunta seguinte a
         // "quanto repassei".
@@ -145,6 +212,40 @@ export const renderRepasses = async (container) => {
                     <button class="gs-filtro" data-situacao="previsto" aria-pressed="false">A pagar</button>
                 </div>
             </section>
+
+            ${retido ? `
+            <section class="ds-card ds-card--lit rp-estudio">
+                <div class="rp-estudio__topo">
+                    <span class="rp-estudio__icone"><i data-lucide="landmark"></i></span>
+                    <div>
+                        <h2 class="ds-card-title">Retido para o estúdio</h2>
+                        <span class="ds-card-sub">
+                            ${escopo === 'mes' ? `De ${moeda(bruto)} alocados ao time em ${mesExtenso(mes)}`
+                                               : `De ${moeda(bruto)} alocados ao time no total`}
+                        </span>
+                    </div>
+                </div>
+                <div class="rp-estudio__numeros">
+                    <div class="rp-estudio__num">
+                        <span class="gs-kpi__rotulo">Ficou com o estúdio</span>
+                        <span class="gs-kpi__valor">${moeda(retido)}</span>
+                        <span class="gs-kpi__pe"><span>${pct(retido, bruto || 1)}% do bruto</span></span>
+                    </div>
+                    <div class="rp-estudio__num">
+                        <span class="gs-kpi__rotulo">Saiu para o time</span>
+                        <span class="gs-kpi__valor">${moeda(totalPago)}</span>
+                        <span class="gs-kpi__pe"><span>o que de fato deixou a conta</span></span>
+                    </div>
+                    <div class="rp-estudio__num">
+                        <span class="gs-kpi__rotulo">Reserva disponível</span>
+                        <span class="gs-kpi__valor ${reserva.disponivel < 0 ? 'gs-negativo' : ''}">${moeda(reserva.disponivel)}</span>
+                        <span class="gs-kpi__pe"><span>${moeda(reserva.separado)} retidos − ${moeda(reserva.gasto)} investidos</span></span>
+                    </div>
+                </div>
+                <a href="/investimentos" class="ds-btn ds-btn--ghost ds-btn--sm rp-estudio__link">
+                    <i data-lucide="arrow-up-right"></i> Ver investimentos
+                </a>
+            </section>` : ''}
 
             ${resumo.length ? `
             <section class="rp-time">
@@ -232,6 +333,11 @@ const cartaoIntegrante = (r, totalPago, quemAtivo) => {
             </span>
         </span>
         <span class="rp-pessoa__valor">${moeda(r.pago)}</span>
+        ${r.retido ? `
+            <span class="rp-pessoa__retido">
+                <i data-lucide="landmark"></i>
+                ${moeda(r.retido)} para o estúdio, de ${moeda(r.bruto)} brutos
+            </span>` : ''}
         <span class="rp-pessoa__pe">
             ${r.previsto
                 ? `<span class="ds-chip ds-chip--warning">${moeda(r.previsto)} a pagar</span>`
@@ -254,6 +360,7 @@ const linhas = (lista, integrantes, entradas) => {
         const pago = (r.status || 'pago') === 'pago';
         const entrada = entradas.find(e => e.id === r.entrada_id);
         const cor = i?.cor;
+        const retido = Number(r.retido_centavos) || 0;
         return `
         <button class="gs-linha" data-id="${esc(r.id)}">
             <span class="gs-linha__marca" style="${cor ? `background:${esc(cor)}22;color:${esc(cor)}` : ''}">
@@ -263,12 +370,18 @@ const linhas = (lista, integrantes, entradas) => {
                 <p class="gs-linha__titulo">${esc(i?.nome || 'Integrante removido')}</p>
                 <p class="gs-linha__meta">
                     <span>${dataBR(r.data)}</span>
+                    ${retido ? `<span>de ${moeda(r.valor_centavos)} brutos</span>` : ''}
                     ${entrada ? `<span>ref. ${esc(entrada.projeto || 'entrada')}</span>` : ''}
                     ${r.nota ? `<span>${esc(r.nota)}</span>` : ''}
                 </p>
             </div>
-            <span class="gs-linha__valor">${moeda(r.valor_centavos)}</span>
+            <!-- O valor em destaque é o LÍQUIDO: é ele que aparece no
+                 extrato, e é contra o extrato que alguém confere isto. -->
+            <span class="gs-linha__valor">${moeda(liquidoDoRepasse(r))}</span>
             <span class="gs-linha__lado">
+                ${retido ? `<span class="ds-chip ds-chip--accent" title="Retido para o estúdio">
+                                <i data-lucide="landmark"></i> ${moeda(retido)}
+                            </span>` : ''}
                 <span class="ds-chip ${pago ? 'ds-chip--success' : 'ds-chip--warning'}">
                     ${pago ? 'pago' : 'a pagar'}
                 </span>
@@ -305,5 +418,32 @@ const ESTILOS = `
 }
 .rp-pessoa__pe { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .rp-pessoa__fatia { font-size: var(--text-xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.rp-pessoa__retido {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--text-xs); color: var(--accent);
+}
+.rp-pessoa__retido i, .rp-pessoa__retido svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+/* ── Bloco da reserva do estúdio ──────────────────────────────────────────
+   Só aparece quando houve retenção no período. Um cartão permanente
+   mostrando R$ 0,00 ensinaria a ignorá-lo. */
+.rp-estudio { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); position: relative; }
+.rp-estudio__topo { display: flex; align-items: center; gap: var(--space-4); }
+.rp-estudio__icone {
+    width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-md);
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-muted); color: var(--accent);
+}
+.rp-estudio__icone i, .rp-estudio__icone svg { width: 19px; height: 19px; }
+.rp-estudio__numeros {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: var(--space-5);
+}
+.rp-estudio__num { display: flex; flex-direction: column; gap: var(--space-1); }
+.rp-estudio__link { position: absolute; top: var(--space-6); right: var(--space-6); }
+
+@media (max-width: 720px) {
+    .rp-estudio__link { position: static; align-self: flex-start; }
+}
 </style>
 `;

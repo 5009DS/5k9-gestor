@@ -8,7 +8,7 @@ import {
 } from '../lib/formato.js';
 import {
     investimentosDoMes, investidoNoMes, custoFixoMensalizado, proximaRenovacao,
-    parcelaDe, parcelasEmAberto, totalDeParcelas, indiceDaParcela,
+    parcelaDe, parcelasEmAberto, totalDeParcelas, indiceDaParcela, reservaDoEstudio,
 } from '../lib/calculo.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -31,7 +31,11 @@ const CATEGORIAS = ['Software', 'Equipamento', 'Educação', 'Marketing',
                     'Infraestrutura', 'Serviços', 'Outro'];
 
 export const renderInvestimentos = async (container) => {
-    let investimentos = await store.investimentos.listar();
+    // Repasses entram aqui só pela reserva: é a retenção deles que banca o
+    // que esta tela lista.
+    let [investimentos, repasses] = await Promise.all([
+        store.investimentos.listar(), store.repasses.listar(),
+    ]);
 
     let mes = mesAtual();
     let filtro = 'todos';   // 'todos' | 'recorrente' | 'pontual'
@@ -128,7 +132,9 @@ export const renderInvestimentos = async (container) => {
 
     const recarregar = async () => {
         store.limparCache();
-        investimentos = await store.investimentos.listar();
+        [investimentos, repasses] = await Promise.all([
+            store.investimentos.listar(), store.repasses.listar(),
+        ]);
         desenhar();
     };
 
@@ -222,6 +228,7 @@ export const renderInvestimentos = async (container) => {
         const fixoMensal = custoFixoMensalizado(investimentos);
         const ativos = investimentos.filter(i => i.tipo === 'recorrente' && !i.encerrado_em).length;
         const emAberto = parcelasEmAberto(investimentos, mes);
+        const reserva = reservaDoEstudio(repasses, investimentos, mes);
         const parceladosVivos = investimentos.filter(i =>
             i.tipo === 'parcelado' && indiceDaParcela(i, mes) + 1 < totalDeParcelas(i)).length;
 
@@ -236,7 +243,23 @@ export const renderInvestimentos = async (container) => {
                     <span class="gs-kpi__pe"><span>${doMes.length} cobrança${doMes.length === 1 ? '' : 's'} no mês</span></span>
                 </article>
 
+                <!-- A reserva vem antes do custo fixo: é o dinheiro com que
+                     se compra, e a primeira pergunta de quem abre esta tela
+                     é "posso comprar?". -->
                 <article class="ds-card ds-card--lit gs-kpi gs-kpi--saldo">
+                    <div class="gs-kpi__topo">
+                        <span class="gs-kpi__rotulo">Reserva do estúdio</span>
+                        <span class="gs-kpi__icone"><i data-lucide="landmark"></i></span>
+                    </div>
+                    <span class="gs-kpi__valor ${reserva.disponivel < 0 ? 'gs-negativo' : ''}">${moeda(reserva.disponivel)}</span>
+                    <span class="gs-kpi__pe"><span>${
+                        reserva.disponivel < 0
+                            ? `investiu ${moeda(-reserva.disponivel)} além do retido`
+                            : `${moeda(reserva.separado)} retidos − ${moeda(reserva.gasto)} investidos`
+                    }</span></span>
+                </article>
+
+                <article class="ds-card gs-kpi">
                     <div class="gs-kpi__topo">
                         <span class="gs-kpi__rotulo">Custo fixo mensalizado</span>
                         <span class="gs-kpi__icone"><i data-lucide="repeat"></i></span>

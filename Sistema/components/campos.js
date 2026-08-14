@@ -285,6 +285,9 @@ function injectStyles() {
         }
         .cp-viva b { font-variant-numeric: tabular-nums; }
         .cp-viva[hidden] { display: none; }
+        /* Quando a conta viva denuncia um valor impossível, ela troca de
+           papel: deixa de informar e passa a avisar. */
+        .cp-viva--erro { background: var(--danger-muted); color: var(--danger); }
 
         .cp-campo[hidden] { display: none; }
 

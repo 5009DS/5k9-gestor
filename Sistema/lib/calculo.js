@@ -31,15 +31,43 @@ export const recebidoNoMes = (entradas, mes) =>
 export const previstoNoMes = (entradas, mes) =>
     soma(entradasDoMes(entradas, mes).filter(e => e.status !== 'recebido'));
 
-// ── Repasses ────────────────────────────────────────────────────────────
+/* ── Repasses e retenção ──────────────────────────────────────────────────
+   Um repasse tem duas partes: a que vai para a pessoa e a que fica com o
+   estúdio. R$ 2.000 alocados ao Time1 com R$ 150 retidos significam R$ 1.850
+   saindo da conta e R$ 150 permanecendo em casa.
+
+   A distinção não é cosmética. A retenção NÃO é saída de caixa — o dinheiro
+   não deixa o estúdio, muda de bolso. Somá-la ao que foi repassado faria o
+   mesmo real sair duas vezes: uma como pagamento ao time, outra depois como
+   investimento pago com ele.
+
+   Por isso `repassadoNoMes` devolve o LÍQUIDO. Quem quiser o bruto — quanto
+   foi alocado à pessoa antes da retenção — usa `brutoNoMes`.            */
+
+export const liquidoDoRepasse = (r) =>
+    (Number(r.valor_centavos) || 0) - (Number(r.retido_centavos) || 0);
+
 export const repassesDoMes = (repasses, mes) =>
     repasses.filter(r => chaveMes(r.data) === mes);
 
+const pagos = (repasses, mes) =>
+    repassesDoMes(repasses, mes).filter(r => r.status === 'pago');
+
+/** O que efetivamente saiu para as pessoas. É isto que pesa no caixa. */
 export const repassadoNoMes = (repasses, mes) =>
-    soma(repassesDoMes(repasses, mes).filter(r => r.status === 'pago'));
+    pagos(repasses, mes).reduce((t, r) => t + liquidoDoRepasse(r), 0);
+
+/** O que foi alocado antes da retenção — leitura de acordo, não de caixa. */
+export const brutoNoMes = (repasses, mes) => soma(pagos(repasses, mes));
+
+/** Quanto ficou com o estúdio no mês. */
+export const retidoNoMes = (repasses, mes) =>
+    soma(pagos(repasses, mes), 'retido_centavos');
 
 export const aPagarNoMes = (repasses, mes) =>
-    soma(repassesDoMes(repasses, mes).filter(r => r.status !== 'pago'));
+    repassesDoMes(repasses, mes)
+        .filter(r => r.status !== 'pago')
+        .reduce((t, r) => t + liquidoDoRepasse(r), 0);
 
 /* ── Investimentos: quando cada um pesa no caixa ──────────────────────────
    Um lançamento pontual pesa uma vez, no mês da compra. Um custo fixo pesa
@@ -199,13 +227,66 @@ export const fluxoDoMes = ({ entradas, repasses, investimentos }, mes) => {
     const entrou     = recebidoNoMes(entradas, mes);
     const aReceber   = previstoNoMes(entradas, mes);
     const repassado  = repassadoNoMes(repasses, mes);
+    const bruto      = brutoNoMes(repasses, mes);
+    const retido     = retidoNoMes(repasses, mes);
     const aRepassar  = aPagarNoMes(repasses, mes);
     const investido  = investidoNoMes(investimentos, mes);
     return {
-        mes, entrou, aReceber, repassado, aRepassar, investido,
+        mes, entrou, aReceber, repassado, bruto, retido, aRepassar, investido,
+        // `retido` fica FORA de `saiu` e de `saldo` de propósito: ele já está
+        // dentro do que não foi pago ao time. Somá-lo aqui seria descontar do
+        // caixa um dinheiro que continua na conta.
         saiu: repassado + investido,
         saldo: entrou - repassado - investido,
     };
+};
+
+/* ── Reserva do estúdio ───────────────────────────────────────────────────
+   O dinheiro retido dos repasses é o que banca os investimentos. A reserva
+   responde: quanto já foi separado, quanto disso já virou compra, e o que
+   sobra para comprar.
+
+   Um esclarecimento que evita erro de leitura: a reserva NÃO é um segundo
+   caixa somado ao saldo. Ela é uma etiqueta sobre parte do saldo que já
+   existe — o retido nunca saiu da conta. Por isso ela pode ficar NEGATIVA,
+   e isso é informação, não defeito: significa que os investimentos passaram
+   do que foi separado e o excedente veio do lucro geral.               */
+
+/** Tudo que foi retido até o fim do mês informado, inclusive. */
+export const retidoAteMes = (repasses, mes) =>
+    repasses
+        .filter(r => r.status === 'pago' && chaveMes(r.data) <= mes)
+        .reduce((t, r) => t + (Number(r.retido_centavos) || 0), 0);
+
+/**
+ * Tudo que os investimentos já consumiram até o mês informado.
+ *
+ * Percorre mês a mês em vez de somar `valor_centavos`: assinatura cobra
+ * repetidamente e parcelamento cobra em pedaços, então o total consumido não
+ * está em nenhum campo — ele é a soma do que pesou em cada mês.
+ */
+export const investidoAteMes = (investimentos, mes) => {
+    if (!investimentos.length) return 0;
+    const inicio = investimentos
+        .map(i => chaveMes(i.data)).filter(Boolean).sort()[0];
+    if (!inicio || inicio > mes) return 0;
+
+    let total = 0;
+    let m = inicio;
+    // Guarda de 600 meses (50 anos): protege contra uma data absurda digitada
+    // errada transformar isso num laço infinito.
+    for (let n = 0; m <= mes && n < 600; n++) {
+        total += investidoNoMes(investimentos, m);
+        m = somarMeses(m, 1);
+    }
+    return total;
+};
+
+/** Retido acumulado menos investido acumulado. Negativo = gastou além. */
+export const reservaDoEstudio = (repasses, investimentos, mes) => {
+    const separado = retidoAteMes(repasses, mes);
+    const gasto    = investidoAteMes(investimentos, mes);
+    return { separado, gasto, disponivel: separado - gasto };
 };
 
 /** Variação percentual contra o mês anterior. Sem base, 0% ou 100%. */
@@ -254,17 +335,27 @@ export const porCliente = (entradas, clientes, mes = null) => {
         .sort((a, b) => b.total - a.total);
 };
 
-/** Quanto cada integrante recebeu (pago) e quanto ainda está previsto. */
+/**
+ * Quanto cada integrante recebeu, quanto está previsto e quanto do ganho
+ * dele ficou com o estúdio.
+ *
+ * `pago` é LÍQUIDO — o que a pessoa de fato recebeu. Mostrar o bruto aqui
+ * faria a soma da coluna não bater com o que saiu da conta, e é essa soma
+ * que alguém confere contra o extrato.
+ */
 export const porIntegrante = (repasses, integrantes, mes = null) => {
     const alvo = mes ? repassesDoMes(repasses, mes) : repasses;
     const mapa = new Map();
     alvo.forEach(r => {
         const chave = r.integrante_id || 'sem-integrante';
-        const atual = mapa.get(chave) || { pago: 0, previsto: 0, quantidade: 0 };
-        const v = Number(r.valor_centavos) || 0;
+        const atual = mapa.get(chave) || { pago: 0, previsto: 0, retido: 0, bruto: 0, quantidade: 0 };
+        const liquido = liquidoDoRepasse(r);
+        const pago = r.status === 'pago';
         mapa.set(chave, {
-            pago:     atual.pago + (r.status === 'pago' ? v : 0),
-            previsto: atual.previsto + (r.status !== 'pago' ? v : 0),
+            pago:     atual.pago + (pago ? liquido : 0),
+            previsto: atual.previsto + (pago ? 0 : liquido),
+            retido:   atual.retido + (pago ? (Number(r.retido_centavos) || 0) : 0),
+            bruto:    atual.bruto + (pago ? (Number(r.valor_centavos) || 0) : 0),
             quantidade: atual.quantidade + 1,
         });
     });
@@ -277,8 +368,9 @@ export const porIntegrante = (repasses, integrantes, mes = null) => {
 };
 
 /**
- * Quanto de uma entrada já foi repassado. É o que responde "esse projeto
- * já foi dividido?" sem precisar abrir a lista de repasses.
+ * Quanto de uma entrada já foi dividido. Usa o BRUTO — a pergunta aqui é
+ * "esse projeto já foi rateado?", e a parte retida também saiu do bolo da
+ * entrada, ainda que tenha ficado em casa.
  */
 export const repassadoDaEntrada = (repasses, entradaId) =>
     soma(repasses.filter(r => r.entrada_id === entradaId && r.status === 'pago'));

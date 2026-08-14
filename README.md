@@ -42,7 +42,7 @@ modo: a troca não leva nada junto. Depois de conectado, use "Importar".
 |---|---|
 | `/` | Fechamento do mês: entrou, repassado, investido, saldo. Doze meses em barras, divisão de cada real, origem (clientes) e destino (time), renovações próximas. |
 | `/entradas` | Cada pagamento recebido ou previsto, com quanto dele já virou repasse. |
-| `/repasses` | Quanto cada integrante recebeu e o que está em aberto. Valores lançados à mão. |
+| `/repasses` | Quanto cada integrante recebeu, o que está em aberto e quanto do ganho ficou com o estúdio. Valores lançados à mão. |
 | `/investimentos` | Compromissos (assinaturas e parcelamentos, pela próxima cobrança) separados do que pesou no mês. |
 | `/cadastros` | Clientes e time, com o acumulado de todos os tempos. |
 | `/configuracoes` | Conexão, exportar/importar, tema, dados de exemplo. |
@@ -75,6 +75,18 @@ acaba; para "quanto já está comprometido", há o indicador de parcelas em aber
 acordo próprio e quem decide é o time. O que o sistema garante é que o combinado
 fique registrado, datado e somado.
 
+**Retenção é transferência, não despesa.** Parte do que é alocado a um
+integrante pode ficar com o estúdio — R$ 2.000 para o Time1 com R$ 150 retidos
+significam R$ 1.850 saindo da conta e R$ 150 permanecendo em casa. Por isso
+"repassado ao time" mostra o **líquido**: contar o bruto faria o mesmo real sair
+duas vezes, uma como pagamento e outra depois como investimento comprado com
+ele. A retenção fica fora de `saiu` e de `saldo` (`lib/calculo.js`).
+
+**A reserva do estúdio é uma etiqueta, não um segundo caixa.** Ela é o retido
+acumulado menos o investido acumulado, e o dinheiro retido nunca saiu da conta —
+está dentro do saldo. Pode ficar negativa, e isso é informação: significa que os
+investimentos passaram do que foi separado e o excedente veio do lucro geral.
+
 **Cancelar assinatura não reescreve o passado.** O banco guarda `encerrado_em`
 (quando parou), não um booleano — assim os meses anteriores continuam calculando
 certo depois do cancelamento.
@@ -94,6 +106,7 @@ Sistema/
   db/
     schema.sql              rodar uma vez, num projeto Supabase novo
     migracao-parcelas.sql   compras parceladas — rodar em bancos já criados
+    migracao-retencao.sql   retenção para o estúdio — idem
     local.js          adaptador localStorage
     remoto.js         adaptador Supabase (import preguiçoso da lib)
   lib/

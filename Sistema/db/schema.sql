@@ -70,16 +70,24 @@ create index if not exists entradas_cliente_idx on entradas(cliente_id);
 -- ── Repasses: o que foi (ou será) pago ao time ───────────────────────────
 -- Valor lançado à mão: o sistema não calcula divisão. Cada projeto tem um
 -- acordo próprio, e quem decide é o time — aqui só fica registrado.
+--
+-- `valor_centavos` é o BRUTO alocado à pessoa; `retido_centavos` é a fatia
+-- que fica com o estúdio para financiar investimentos. O que sai do caixa é
+-- a diferença entre os dois — a retenção não é despesa, é o dinheiro
+-- mudando de bolso dentro de casa.
 create table if not exists repasses (
-    id             text primary key default gen_random_uuid()::text,
-    integrante_id  text references integrantes(id) on delete set null,
-    entrada_id     text references entradas(id)    on delete set null,
-    valor_centavos bigint not null default 0,
-    data           date not null default current_date,
-    status         text not null default 'pago',       -- pago | previsto
-    metodo         text,
-    nota           text,
-    criado_em      timestamptz not null default now()
+    id              text primary key default gen_random_uuid()::text,
+    integrante_id   text references integrantes(id) on delete set null,
+    entrada_id      text references entradas(id)    on delete set null,
+    valor_centavos  bigint not null default 0,
+    retido_centavos bigint not null default 0,
+    data            date not null default current_date,
+    status          text not null default 'pago',      -- pago | previsto
+    metodo          text,
+    nota            text,
+    criado_em       timestamptz not null default now(),
+    constraint repasses_retido_valido
+        check (retido_centavos >= 0 and retido_centavos <= valor_centavos)
 );
 
 create index if not exists repasses_data_idx       on repasses(data desc);
