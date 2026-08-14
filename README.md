@@ -47,6 +47,78 @@ modo: a troca não leva nada junto. Depois de conectado, use "Importar".
 | `/cadastros` | Clientes e time, com o acumulado de todos os tempos. |
 | `/configuracoes` | Conexão, exportar/importar, tema, dados de exemplo. |
 
+## Comprovantes por e-mail
+
+Toda segunda-feira cada integrante recebe um comprovante dos repasses da semana
+anterior (segunda a domingo); todo dia 1º, um do mês que fechou. **Quem não
+recebeu nada no período não recebe e-mail.**
+
+O envio vive em [`Sistema/api/comprovantes.js`](Sistema/api/comprovantes.js) — o
+único pedaço do sistema que roda fora do navegador. Precisa ser assim por dois
+motivos sem contorno: horário marcado (um site estático só acorda quando alguém
+o abre) e segredo (a chave de envio não pode ir no código do navegador).
+
+### Ligar
+
+1. Rode [`db/migracao-comprovantes.sql`](Sistema/db/migracao-comprovantes.sql) no Supabase.
+2. Crie conta no [Resend](https://resend.com), verifique o domínio `5k9.studio`
+   (registros DNS na GoDaddy, mesmo procedimento dos subdomínios) e gere uma
+   API key.
+3. Na Vercel, projeto do Gestor → **Settings → Environment Variables**:
+
+| Variável | O que é |
+|---|---|
+| `SUPABASE_URL` | `https://xxxx.supabase.co` |
+| `SUPABASE_SERVICE_ROLE` | chave **service_role** — passa por cima do RLS, nunca no navegador |
+| `RESEND_API_KEY` | chave da API do Resend |
+| `EMAIL_REMETENTE` | `5K9 Studio <financeiro@5k9.studio>` |
+| `CRON_SECRET` | qualquer texto longo aleatório; autentica o disparo |
+
+4. Confira que cada integrante tem e-mail preenchido em **Cadastros**.
+5. Faça deploy. A Vercel lê o `crons` do `vercel.json` e agenda sozinha.
+
+### Testar sem esperar segunda-feira
+
+`simular=1` calcula tudo e devolve o que sairia, **sem enviar nada**:
+
+```bash
+curl -H "Authorization: Bearer SEU_CRON_SECRET" "https://gestor.5k9.studio/api/comprovantes?simular=1&tipo=semanal&inicio=2026-08-03&fim=2026-08-09"
+```
+
+Tire o `simular=1` para enviar de verdade aquele período.
+
+### Detalhes que valem saber
+
+**O cron roda todo dia, não só segunda.** O plano Hobby da Vercel permite uma
+execução diária; a função é que decide se hoje é dia de enviar. `0 12 * * *` é
+meio-dia UTC, ou 9h de Brasília — o Brasil não tem horário de verão desde 2019,
+então a conta é fixa. Toda decisão de data usa o fuso `America/Sao_Paulo`
+explicitamente: sem isso, um disparo de madrugada cobriria a semana errada.
+
+**O `vercel.json` reescreve tudo para o `index.html`, menos `/api/`.** A regra
+usa `/((?!api/).*)` por causa disso. Na prática é cinto e suspensório: a Vercel
+resolve funções antes de aplicar rewrites, então `/(.*)` também funcionaria. Se
+algum dia a validação do deploy reclamar desse padrão, voltar para `/(.*)` é
+seguro. (JSON não aceita comentários, e uma chave `//` extra já derrubou um
+deploy no 5K9 Forms — por isso a explicação está aqui.)
+
+**Comprovante repetido é pior que comprovante atrasado.** O registro em
+`comprovantes_enviados` é gravado **antes** do envio, e a garantia real é o
+índice único `(integrante_id, tipo, inicio, fim)` — não a consulta prévia, que
+teria uma janela entre verificar e gravar. Se o envio falhar depois do registro,
+ele é desfeito para a próxima execução tentar de novo.
+
+**O e-mail ignora o design system, de propósito.** Cliente de e-mail não é
+navegador: o Gmail remove `<style>` do topo, ninguém suporta custom properties
+(todo `var(--accent)` viraria vazio) e o suporte a grid/flex é irregular. Por
+isso o layout é em `<table>`, toda cor é literal e não há imagem remota — quase
+todo cliente bloqueia imagens por padrão, e um comprovante que abre sem
+cabeçalho parece falso. O tema é claro mesmo com o painel sendo escuro:
+comprovante é encaminhado para contador e às vezes impresso, e o modo escuro do
+Gmail reprocessa cores de um jeito impossível de prever.
+
+**Só entram repasses pagos.** Previsto não é comprovante.
+
 ## Decisões que valem saber
 
 **Dinheiro em centavos, sempre.** Todo valor circula como inteiro
@@ -104,9 +176,12 @@ Sistema/
   store.js            escolhe o adaptador e expõe as cinco coleções
   theme.js            claro/escuro (mesma chave do Forms: 5k9_theme)
   db/
-    schema.sql              rodar uma vez, num projeto Supabase novo
-    migracao-parcelas.sql   compras parceladas — rodar em bancos já criados
-    migracao-retencao.sql   retenção para o estúdio — idem
+    schema.sql                 rodar uma vez, num projeto Supabase novo
+    migracao-parcelas.sql      compras parceladas — rodar em bancos já criados
+    migracao-retencao.sql      retenção para o estúdio — idem
+    migracao-comprovantes.sql  registro de e-mails enviados — idem
+  api/
+    comprovantes.js         função agendada (Vercel Cron) — roda fora do navegador
     local.js          adaptador localStorage
     remoto.js         adaptador Supabase (import preguiçoso da lib)
   lib/
