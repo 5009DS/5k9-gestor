@@ -1,16 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    FERRAMENTAS DO ESTÚDIO — a lista que alimenta o trocador da topnav.
 
-   Este arquivo é IDÊNTICO nos dois sistemas (5K9 Forms e 5K9 Gestor). A
-   única linha que muda entre eles é a constante ATUAL, no fim. Ao criar uma
-   ferramenta nova, acrescente uma entrada aqui e copie o arquivo para os
-   outros repositórios — é a lista que faz cada sistema saber que os outros
-   existem.
+   Este arquivo é IDÊNTICO nos quatro sistemas (5K9 Forms, 5K9 Gestor, 5K9
+   Chronos e 5K9 Dionísio). A única linha que muda entre eles é a constante
+   ATUAL, no fim. Ao criar uma ferramenta nova, acrescente uma entrada aqui e
+   copie o arquivo para os outros repositórios — é a lista que faz cada
+   sistema saber que os outros existem.
 
    Poderia ser um endpoint compartilhado, mas não deveria: um menu de
-   navegação que depende de rede fica vazio quando a rede falha, e o custo
-   de manter três linhas em sincronia é menor que o de explicar por que o
-   botão de trocar de ferramenta às vezes não lista nada.
+   navegação que depende de rede fica vazio quando a rede falha, e o custo de
+   manter quatro linhas em sincronia é menor que o de explicar por que o botão
+   de trocar de ferramenta às vezes não lista nada.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export const FERRAMENTAS = [
@@ -32,25 +32,41 @@ export const FERRAMENTAS = [
         host: 'gestor.5k9.studio',
         porta: 5174,
     },
+    {
+        id: 'chronos',
+        nome: 'Chronos',
+        descricao: 'Cronograma e roteiros do cliente',
+        icone: 'calendar-range',
+        host: 'chronos.5k9.studio',
+        porta: 5175,
+    },
+    {
+        id: 'dionisio',
+        nome: 'Dionísio',
+        descricao: 'Roteiros e scripts audiovisuais',
+        icone: 'clapperboard',
+        host: 'dionisio.5k9.studio',
+        porta: 5176,
+    },
 ];
 
 /**
  * Endereço de uma ferramenta, adaptado a onde estamos.
  *
- * Em desenvolvimento os dois sistemas rodam em portas diferentes do mesmo
+ * Em desenvolvimento os sistemas rodam em portas diferentes do mesmo
  * localhost; em produção, em subdomínios. Sem esta distinção, clicar em
  * "Forms" durante o desenvolvimento jogaria a pessoa para o site publicado —
  * e o pior tipo de bug é o que faz você testar a versão errada sem perceber.
  */
 export const urlDe = (ferramenta) => {
-    const { hostname, protocol, port } = window.location;
+    const { hostname, protocol } = window.location;
     const local = hostname === 'localhost' || hostname === '127.0.0.1';
     if (local) return `${protocol}//${hostname}:${ferramenta.porta}`;
 
     /* Em produção, monta o host trocando o primeiro rótulo do domínio atual
        em vez de usar `ferramenta.host` cru. É o que mantém o trocador
        funcionando em ambiente de pré-visualização e se o domínio do estúdio
-       mudar: gestor.5k9.studio → painel.5k9.studio, sem este arquivo
+       mudar: dionisio.5k9.studio → painel.5k9.studio, sem este arquivo
        precisar saber qual é o domínio-pai. O host fixo é a reserva para
        quando não há de onde derivar (deploy .vercel.app, por exemplo). */
     const partes = hostname.split('.');
